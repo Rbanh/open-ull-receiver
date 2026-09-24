@@ -52,7 +52,7 @@ struct prepared_frame {
     uint32_t index;
     uint8_t channel, header, stream_mask, poll_header, tx_sequence[2], ack_sequence[2];
     struct ull_parent_pdu parent;
-    bool valid, receive, stereo_audio;
+    bool valid, receive, stereo_audio, cache_reused;
     size_t length;
     uint8_t wire[ULL_PHY_PACKET_MAX];
 };
@@ -73,6 +73,40 @@ static struct {
     struct prepared_frame prepared[2], alternate[2], gap[2];
 } trial;
 static struct ull_audio_source *audio_source;
+static atomic_uint control_last_data_ms;
+static atomic_uint control_retry_policy[3]; /* repeated, held single, data RX */
+void ull_tone_trial_control_retry_status(uint32_t out[4]){
+    for(unsigned i=0;i<3;i++)out[i]=atomic_load_explicit(&control_retry_policy[i],memory_order_relaxed);
+    unsigned last=atomic_load_explicit(&control_last_data_ms,memory_order_relaxed);
+    out[3]=last ? (unsigned)(esp_timer_get_time()/1000)-last : UINT32_MAX;
+}
+static bool control_retry_quiet(void){
+    unsigned last=atomic_load_explicit(&control_last_data_ms,memory_order_relaxed);
+    return !last || (unsigned)(esp_timer_get_time()/1000)-last>=5000u;
+}
+static bool control_retry_slot(const struct prepared_frame *p){
+    /* Reserve every fourth 30 ms parent poll as a single-send opportunity.
+     * That lets the first wheel event through without waiting for a previous
+     * control reply to open the five-second activity guard. */
+    return p->index>=trial.stream_starts[1] &&
+           ((p->index-trial.stream_starts[1])/6u)%4u!=0u;
+}
+static bool retry_audio_eligible(const struct prepared_frame *p){
+    /* Repeat stable audio packets. A control-bearing packet is repeated only
+     * when its exact parent header and ACK vector matched a prebuilt cache;
+     * a fresh CCM rebuild gets the short single-send reservation. */
+    return audio_source && !p->receive && p->stereo_audio &&
+        p->stream_mask==6 &&
+        ((p->length==203 && p->header==0x30) ||
+         (p->length==205 && p->header==0x32 && p->cache_reused &&
+          control_retry_quiet() && control_retry_slot(p)));
+}
+static bool control_poll_due(uint32_t index){
+    /* The detached parent's verified control interval is 30 ms. At a 5 ms
+     * audio period, one poll every six frames preserves that cadence. */
+    return index>=trial.stream_starts[1] &&
+           (index-trial.stream_starts[1])%6u==0u;
+}
 static bool continuous;
 static atomic_uint stream_state[8];
 void ull_tone_trial_stream_state(uint32_t out[8]){
@@ -90,6 +124,7 @@ static atomic_uint retry_burst[6],retry_burst_started_ms;
 static bool burst_active,burst_watch,burst_lead;
 static atomic_bool retry_auto_enabled=true;
 static atomic_uint retry_auto_values[7]; /* active,blocked,attempt,done,fail,skip,warmup */
+static atomic_uint live_retry_errors[2]; /* scheduler conflict, deadline expired */
 static uint32_t auto_last_frame=UINT32_MAX;
 static bool auto_failed_skip_pending;
 static atomic_uint auto_cooldown,auto_stable_frames,auto_recoveries,auto_cooldown_since;
@@ -122,6 +157,9 @@ void ull_tone_trial_retry_auto_status(uint32_t out[8]){
     if(!out)return;
     out[0]=atomic_load(&retry_auto_enabled);
     for(unsigned i=0;i<7;i++)out[i+1]=atomic_load(&retry_auto_values[i]);
+}
+void ull_tone_trial_retry_error_counts(uint32_t out[2]){
+    for(unsigned i=0;i<2;i++)out[i]=atomic_load_explicit(&live_retry_errors[i],memory_order_relaxed);
 }
 static void auto_release(void){
     atomic_store(&retry_auto_values[0],0);
@@ -218,7 +256,11 @@ static void burst_done(const struct ull_radio_tx_result *result,unsigned error){
     burst_active=false;ull_radio_tx_retry_trace_enable(true);
     if(atomic_load(&retry_owner)==3){
         if(error || !result || result->phase!=ULL_TX_ENDED){
-            if(error){retry_cache_publish(6,trial.active_frame);auto_failed_skip_pending=true;}
+            if(error){
+                retry_cache_publish(6,trial.active_frame);auto_failed_skip_pending=true;
+                if(error==ULL_TX_SCHEDULE_CONFLICT)atomic_fetch_add_explicit(&live_retry_errors[0],1,memory_order_relaxed);
+                else if(error==ULL_TX_TIME_EXPIRED)atomic_fetch_add_explicit(&live_retry_errors[1],1,memory_order_relaxed);
+            }
             atomic_fetch_add(&retry_auto_values[4],1);
             if(error==ULL_TX_TIME_EXPIRED || error==ULL_TX_SCHEDULE_CONFLICT)auto_cooldown_start();
             else auto_block();
@@ -343,6 +385,41 @@ static void retry_next_mark(unsigned slot){
 }
 static atomic_uint live_position,live_feedback,live_collect_us,live_build_us;
 static atomic_uint live_delivery[8];
+static atomic_uint live_repeat_delivery[6];
+static atomic_uint live_retry_fallback[3]; /* attempted, sent, rejected */
+void ull_tone_trial_retry_fallback(uint32_t out[3]){
+    for(unsigned i=0;i<3;i++)out[i]=atomic_load_explicit(&live_retry_fallback[i],memory_order_relaxed);
+}
+void ull_tone_trial_retry_delivery(uint32_t out[6]){
+    for(unsigned i=0;i<6;i++)out[i]=atomic_load_explicit(
+        &live_repeat_delivery[i],memory_order_relaxed);
+}
+static uint8_t submit_with_retry_fallback(const struct ull_radio_tx_request *request,
+                                          bool automatic,bool *fallback_success,
+                                          bool *auto_failure_recorded){
+    uint8_t status=ull_radio_tx_submit(request);
+    *fallback_success=false;*auto_failure_recorded=false;
+    if(!automatic || status!=ULL_TX_SCHEDULE_CONFLICT)return status;
+    /* A long second-slot reservation may collide with native radio work.
+     * Preserve the frame by trying the already-proven single-slot shape
+     * at the same instant. Keep the automatic retry on cooldown either way. */
+    burst_done(NULL,status);
+    *auto_failure_recorded=true;
+    atomic_fetch_add_explicit(&live_retry_fallback[0],1,memory_order_relaxed);
+    struct ull_radio_tx_request ordinary=*request;
+    ordinary.repeat_payload=0;
+    ordinary.prequeued_reply=0;
+    ordinary.followup_delay_us=2350;
+    uint8_t single_status=ull_radio_tx_submit(&ordinary);
+    if(!single_status){
+        *fallback_success=true;
+        auto_failed_skip_pending=false;
+        atomic_fetch_add_explicit(&live_retry_fallback[1],1,memory_order_relaxed);
+        return 0;
+    }
+    atomic_fetch_add_explicit(&live_retry_fallback[2],1,memory_order_relaxed);
+    return status; /* Preserve the original recoverable error class. */
+}
 static atomic_uint live_channels[37][3];
 void ull_tone_trial_channel_stats(uint32_t out[37][3]){
     for(unsigned ch=0;ch<37;ch++)for(unsigned i=0;i<3;i++)
@@ -568,7 +645,8 @@ static bool build_prepared_frame(uint32_t index,uint8_t mask,
     p->parent=(poll || parent_ack)?*parent:(struct ull_parent_pdu){0};
     p->stereo_audio=mask==6 && !empty;
     memcpy(p->tx_sequence,seq,2);memcpy(p->ack_sequence,ack,2);
-    p->build_us=(uint32_t)(esp_timer_get_time()-started);p->valid=true;
+    p->build_us=(uint32_t)(esp_timer_get_time()-started);
+    p->cache_reused=false;p->valid=true;
     return true;
 }
 
@@ -595,7 +673,7 @@ static bool prepare_frame(uint32_t index){
     uint8_t seq[2],ack[2];struct ull_parent_pdu parent={0};
     if(ULL_PARENT_POLL && ULL_EMPTY_BOOTSTRAP && mask==2 && !receive_frame(index) &&
        ull_raw_parent_air_pdu(&parent))return false;
-    if(mask==6 && !receive_frame(index))
+    if(mask==6 && !receive_frame(index) && control_poll_due(index))
         (void)ull_raw_detached_parent_air_pdu(&parent);
     ull_air_feedback_sequences(&trial.feedback,index,trial.stream_starts,seq,ack);
     if(ULL_SEQUENCE_CONTROL && !receive_frame(index) && (index&2u))
@@ -619,15 +697,15 @@ static bool prepare_frame(uint32_t index){
     }
     if(frame_matches(p,index,mask,seq,ack,&parent)){
         if(capture){retry_cache_work[10]=1;retry_cache_work[12]=1;}
-        p->generation=trial.feedback.generation;return true;
+        p->generation=trial.feedback.generation;p->cache_reused=true;return true;
     }
     if(frame_matches(a,index,mask,seq,ack,&parent)){
         if(capture){retry_cache_work[10]=2;retry_cache_work[12]=1;}
-        *p=*a;p->generation=trial.feedback.generation;return true;
+        *p=*a;p->generation=trial.feedback.generation;p->cache_reused=true;return true;
     }
     if(frame_matches(g,index,mask,seq,ack,&parent)){
         if(capture){retry_cache_work[10]=4;retry_cache_work[12]=1;}
-        *p=*g;p->generation=trial.feedback.generation;return true;
+        *p=*g;p->generation=trial.feedback.generation;p->cache_reused=true;return true;
     }
     bool built=build_prepared_frame(index,mask,seq,ack,&parent,p);
     if(capture){retry_cache_work[10]=3;retry_cache_work[11]=built?p->build_us:0;retry_cache_work[12]=built;}
@@ -815,8 +893,8 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
             completed->stereo_audio &&
             result.phase==ULL_TX_ENDED;
         auto_ordinary_completed(audio_sent);
-        unsigned acknowledged=0;
-        bool heard_reply=false;
+        unsigned acknowledged=0,first_window_ack=0;
+        bool heard_reply=false,first_window_valid=false,second_window_valid=false;
         atomic_fetch_add(&live_delivery[0],1);
         /* CS test-TX packet count remains zero with our normal packet format.
          * Count TX callbacks separately; only authenticated ACKs establish
@@ -834,10 +912,20 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
                 const struct prepared_frame *sent=&trial.prepared[trial.active_frame&1u];
                 const struct ull_radio_rx_snapshot *rx=&result.rx[i];
                 if(control.present && !sent->receive && sent->index==trial.active_frame &&
-                   result.phase==ULL_TX_ENDED)
+                   result.phase==ULL_TX_ENDED){
+                    if(control.length){
+                        unsigned now=(unsigned)(esp_timer_get_time()/1000);
+                        atomic_store_explicit(&control_last_data_ms,now?now:1u,memory_order_relaxed);
+                        atomic_fetch_add_explicit(&control_retry_policy[2],1,memory_order_relaxed);
+                    }
                     (void)ull_raw_receive_air_control(&control,&sent->parent);
+                }
                 uint32_t coarse=(rx->hs-trial.requested_hs)&MASK;
                 int64_t elapsed=(int64_t)coarse*625+rx->hus-trial.requested_hus;
+                if(audio_sent && auto_last_submitted_repeat && elapsed>=0 && elapsed<6000){
+                    if(elapsed<ULL_AIR_SUBINTERVAL_US)first_window_valid=true;
+                    else second_window_valid=true;
+                }
                 /* Slot1 replies precede the observed slot2 expiry advance.
                  * An ACK of this transmission must not be advanced twice
                  * when deriving the next interval's expected sequence. */
@@ -852,9 +940,19 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
                            f->expected_tx==((sent->tx_sequence[ch]+1u)&15u))
                             acknowledged|=1u<<ch;
                     }
+                    if(audio_sent && auto_last_submitted_repeat &&
+                       elapsed<ULL_AIR_SUBINTERVAL_US)first_window_ack=acknowledged;
                 }
             }else {trial.received_rejected++;atomic_fetch_add(&live_delivery[6],1);}
             mbedtls_platform_zeroize(&control,sizeof(control));
+        }
+        if(audio_sent && auto_last_submitted_repeat){
+            atomic_fetch_add_explicit(&live_repeat_delivery[0],1,memory_order_relaxed);
+            if(first_window_valid)atomic_fetch_add_explicit(&live_repeat_delivery[1],1,memory_order_relaxed);
+            if(second_window_valid)atomic_fetch_add_explicit(&live_repeat_delivery[2],1,memory_order_relaxed);
+            if(first_window_ack==3u)atomic_fetch_add_explicit(&live_repeat_delivery[3],1,memory_order_relaxed);
+            else if(acknowledged==3u)atomic_fetch_add_explicit(&live_repeat_delivery[4],1,memory_order_relaxed);
+            else atomic_fetch_add_explicit(&live_repeat_delivery[5],1,memory_order_relaxed);
         }
         if(acknowledged&1u)atomic_fetch_add(&live_delivery[4],1);
         if(acknowledged&2u)atomic_fetch_add(&live_delivery[5],1);
@@ -921,8 +1019,9 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
     trial.build_us=p->build_us;trial.active_frame=trial.next_frame;
     trial.requested_hs=p->inner_hs;trial.requested_hus=p->inner_hus;
     uint8_t reply_channel=0;
-    bool eligible=audio_source && !p->receive && p->stereo_audio &&
-        p->stream_mask==6 && p->length==203 && p->header==0x30;
+    bool eligible=retry_audio_eligible(p);
+    if(p->stereo_audio && p->header==0x32 && p->length==205)
+        atomic_fetch_add_explicit(&control_retry_policy[eligible?0:1],1,memory_order_relaxed);
     bool probe=retry_probe_take(eligible,trial.active_frame);
     bool burst=burst_take(eligible);
     bool automatic=!probe && !burst && auto_take(eligible);
@@ -953,12 +1052,14 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
     ull_controller_diag_record(feedback,sizeof(feedback));
 #endif
     TRACE_PROFILE(6);
-    uint8_t status=ull_radio_tx_submit(&request);
+    bool fallback_success=false,auto_failure_recorded=false;
+    uint8_t status=submit_with_retry_fallback(&request,automatic,
+                                                &fallback_success,&auto_failure_recorded);
     retry_attempt_time(6);
     retry_attempt_mark(7,status);
     retry_next_mark(15);
-    if(status){burst_done(NULL,status);retry_probe_done(NULL,status);}
-    else {auto_last_submitted_repeat=repeat;burst_submitted();}
+    if(status){if(!auto_failure_recorded)burst_done(NULL,status);retry_probe_done(NULL,status);}
+    else {auto_last_submitted_repeat=repeat && !fallback_success;burst_submitted();}
     if(!status && retry_probe_next_pending && trial.active_frame>atomic_load(&retry_probe_values[0])){
         radio_time_t next_time=r_rwip_time_get();
         uint32_t coarse=(next_time.hs-retry_probe_start_hs)&MASK;

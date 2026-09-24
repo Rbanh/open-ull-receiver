@@ -54,6 +54,11 @@ void tud_hid_set_report_cb(uint8_t instance,uint8_t report_id,
 extern bool ull_usb_bootloader_allowed(void);
 static bool boot_pending;
 static uint8_t health[16];
+static uint32_t diagnostics[16];
+static _Atomic(ull_usb_diagnostics_cb_t) diagnostics_cb;
+void ull_usb_controls_set_diagnostics(ull_usb_diagnostics_cb_t callback){
+    atomic_store_explicit(&diagnostics_cb,callback,memory_order_release);
+}
 static void boot_after_ack(void *unused){
     (void)unused;
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -62,6 +67,22 @@ static void boot_after_ack(void *unused){
 bool tud_vendor_control_xfer_cb(uint8_t rhport,uint8_t stage,
                                 tusb_control_request_t const *request){
     if(!request)return false;
+    if(request->bmRequestType==0xc0 && request->bRequest==0x5c &&
+       tu_le16toh(request->wValue)<=13 && tu_le16toh(request->wIndex)==0 &&
+       tu_le16toh(request->wLength)==sizeof diagnostics){
+        if(stage==CONTROL_STAGE_SETUP){
+            ull_usb_diagnostics_cb_t callback=atomic_load_explicit(
+                &diagnostics_cb,memory_order_acquire);
+            if(!callback)return false;
+            uint16_t page=tu_le16toh(request->wValue);
+            memset(diagnostics,0,sizeof diagnostics);
+            uint8_t *tag=(uint8_t *)diagnostics;
+            tag[0]='R';tag[1]='F';tag[2]=(uint8_t)('0'+page/10u);tag[3]=(uint8_t)('0'+page%10u);
+            callback(page,diagnostics+1);
+            return tud_control_xfer(rhport,request,diagnostics,sizeof diagnostics);
+        }
+        return true;
+    }
     if(request->bmRequestType==0xc0 && request->bRequest==0x5b &&
        tu_le16toh(request->wValue)==0 && tu_le16toh(request->wIndex)==0 &&
        tu_le16toh(request->wLength)==sizeof health){

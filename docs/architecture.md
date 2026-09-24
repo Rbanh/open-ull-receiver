@@ -15,3 +15,9 @@ Only the Supermini is USB-connected in normal operation. The boards share ground
 The headset's wheel and short power-button press arrive over the encrypted control link and are forwarded as USB HID consumer controls. The microphone switch controls capture mute. The headset may still beep at its own internal volume limit even though Linux has a separate volume range.
 
 The software currently relies on a previously established original-receiver bond and the exact ESP32-S3 controller build exposed by PlatformIO `espressif32@6.12.0`. It is a reverse-engineered interoperability prototype, not a general BLE Audio receiver.
+
+## Keeping audio and controls on the same air link
+
+The Supermini schedules one audio event every 5 ms. It repeats eligible audio packets after a 1.42 ms subinterval using the same encrypted payload and follows the headset's channel hop. The second transmission provides another chance for reception, but an absent stereo acknowledgement is not the same thing as proven audible loss.
+
+The headset's wheel, mic switch, and short power press use authenticated parent-control messages. A control-bearing audio frame is offered every 30 ms. Repeating every one of those frames made idle audio cleaner but could leave wheel actions arriving seconds late. The current policy repeats a control frame only when its encrypted packet was safely reused from the cache, reserves every fourth control poll for a single transmission, and keeps control polls single-send for five seconds after real control data arrives. Audio-only frames continue to retry. The [diagnostic counters](diagnostics.md) expose this tradeoff without logging packets or pairing data.

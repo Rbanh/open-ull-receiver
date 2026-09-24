@@ -638,8 +638,10 @@ uint8_t IRAM_ATTR ull_radio_tx_submit(const struct ull_radio_tx_request *r)
         (r->receive_us && r->tx_receive_us) ||
         (r->prequeued_reply>1) ||
         r->repeat_payload>1 ||
-        (r->repeat_payload && (!r->prequeued_reply || r->length!=203 ||
-          r->header!=0x30 || r->phy!=2 || r->followup_delay_us!=1420)) ||
+        (r->repeat_payload && (!r->prequeued_reply ||
+          !((r->length==203 && r->header==0x30) ||
+            (r->length==205 && r->header==0x32)) ||
+          r->phy!=2 || r->followup_delay_us!=1420)) ||
         (r->prequeued_reply && (!r->followup_delay_us ||
           r->followup_delay_us<(r->phy==1 ? (r->length+10u)*8u : (r->length+11u)*4u)+300u)) ||
         (r->followup_delay_us && (r->receive_us || r->tx_receive_us ||

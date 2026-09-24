@@ -4,6 +4,7 @@ LICENSE
 README.md
 docs/architecture.md
 docs/build.md
+docs/diagnostics.md
 docs/provisioning.md
 docs/publication-scope.md
 firmware/codec/CMakeLists.txt
@@ -96,4 +97,6 @@ tests/run.sh
 tools/audit_release.py
 tools/dump_original.py
 tools/provision_from_dump.py
+tools/read_usb_parent_stats.py
+tools/read_usb_retry_stats.py
 tools/setup_dependencies.py

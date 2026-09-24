@@ -86,6 +86,11 @@ void ull_raw_detached_parent_status(void){
         atomic_load_explicit(&detached_eligibility,memory_order_relaxed),
         v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7]);
 }
+void ull_raw_detached_parent_counters(uint32_t out[9]){
+    if(!out)return;
+    for(unsigned i=0;i<8;i++)out[i]=atomic_load_explicit(&detached_status[i],memory_order_relaxed);
+    out[8]=atomic_load_explicit(&detached_eligibility,memory_order_relaxed);
+}
 bool ull_raw_session_confirmed(void){return e2_confirmed;}
 static uint16_t get16(const uint8_t *p){uint16_t v;memcpy(&v,p,2);return v;}
 static uint32_t get32(const uint8_t *p){uint32_t v;memcpy(&v,p,4);return v;}

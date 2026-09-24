@@ -150,6 +150,16 @@ static void IRAM_ATTR run(void *unused){
  }
 }
 bool ull_pcm_stream_init(void){ull_audio_source_init(&source);return xTaskCreatePinnedToCore(run,"codec_spi",8192,NULL,5,&worker,1)==pdPASS;}
+void ull_pcm_stream_diagnostics(uint32_t out[14]){
+ struct ull_audio_source_stats s;ull_audio_source_stats(&source,&s);
+ out[0]=s.underflows;out[1]=s.discarded;
+ out[2]=atomic_load(&exchanges);out[3]=atomic_load(&timeouts);
+ out[4]=atomic_load(&crc_errors);out[5]=atomic_load(&sequence_errors);
+ out[6]=atomic_load(&codec_errors);out[7]=atomic_load(&queue_drops);
+ out[8]=atomic_load(&reset_count);out[9]=atomic_load(&last_us);
+ out[10]=atomic_load(&max_us);out[11]=atomic_load(&received);
+ out[12]=atomic_load(&decoded);out[13]=atomic_load(&mic_dropped);
+}
 void ull_pcm_stream_stats(void){
  struct ull_audio_source_stats s;ull_audio_source_stats(&source,&s);
  printf("{\"pcm_source\":{\"selected\":%u,\"underflows\":%u,\"discarded\":%u,\"queued\":%u,\"queue_valid\":%s}}\n",(unsigned)s.selected,(unsigned)s.underflows,(unsigned)s.discarded,(unsigned)s.queued,s.queue_valid?"true":"false");

@@ -21,6 +21,12 @@ void ull_tone_trial_progress(uint32_t out[4]);
 /* Cumulative radio completions and first-reply acknowledgements. Missing
  * replies do not by themselves prove that downlink audio was lost. */
 void ull_tone_trial_delivery(uint32_t out[8]);
+/* Repeated audio frames and authenticated replies in the first/second
+ * 1420-us windows. A second-window ACK is evidence of later confirmation,
+ * not proof that the repeated TX alone rescued the sample. */
+void ull_tone_trial_retry_delivery(uint32_t out[6]);
+void ull_tone_trial_retry_fallback(uint32_t out[3]);
+void ull_tone_trial_retry_error_counts(uint32_t out[2]);
 void ull_tone_trial_channel_stats(uint32_t out[37][3]);
 /* One explicitly armed repeat frame per boot; state0idle/1pending/2active/
  * 3collected/4failed. Commands never write controller MMIO. */
@@ -60,3 +66,6 @@ uint8_t ull_tone_trial_status(void);
 bool ull_tone_trial_active(void);
 bool ull_tone_trial_rearm(void); /* Controller only; rejects active/fault states. */
 #endif
+
+/* Read-only control-repeat admission telemetry; values are cumulative. */
+void ull_tone_trial_control_retry_status(uint32_t out[4]);

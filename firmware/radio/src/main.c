@@ -18,12 +18,55 @@
 #include "trial_pump.h"
 #include "tone_trial.h"
 #include "usb_audio.h"
+#include "usb_controls.h"
 #include "usb_recovery.h"
 #include "pcm_stream.h"
 #include "mic_stream.h"
 #include "control_log.h"
 #include "radio_tx.h"
 bool ull_usb_bootloader_allowed(void){return !ull_trial_pump_busy();}
+static void usb_diagnostics(uint16_t page,uint32_t out[15]){
+    if(page==0){
+        uint32_t stream[8],delivery[8],retry[8],recovery[4];
+        ull_tone_trial_stream_state(stream);
+        ull_tone_trial_delivery(delivery);
+        ull_tone_trial_retry_auto_status(retry);
+        ull_tone_trial_retry_auto_recovery_status(recovery);
+        out[0]=stream[0];out[1]=stream[2];out[2]=stream[3];
+        out[3]=stream[4];out[4]=stream[5];out[5]=stream[6];
+        out[6]=delivery[3];out[7]=delivery[4];out[8]=delivery[5];
+        out[9]=retry[3];out[10]=retry[4];out[11]=retry[5];
+        out[12]=retry[6];out[13]=retry[7];
+        out[14]=(retry[0]?1u:0u)|(retry[1]?2u:0u)|
+                (retry[2]?4u:0u)|(recovery[0]?8u:0u)|
+                ((recovery[1]&255u)<<8);
+    }else if(page==1){
+        ull_pcm_stream_diagnostics(out);
+        ull_usb_audio_stats_t usb;ull_usb_audio_stats(&usb);
+        out[14]=usb.playback_dropped_frames;
+    }else if(page==2){
+        uint32_t repeat[6];ull_tone_trial_retry_delivery(repeat);
+        for(unsigned i=0;i<6;i++)out[i]=repeat[i];
+        uint32_t fallback[3];ull_tone_trial_retry_fallback(fallback);
+        for(unsigned i=0;i<3;i++)out[6+i]=fallback[i];
+        uint32_t errors[2];ull_tone_trial_retry_error_counts(errors);
+        out[9]=errors[0];out[10]=errors[1];
+    }else if(page==3){
+        ull_radio_tx_retry_failure(out);
+    }else if(page==4){
+        uint32_t cache[16];ull_tone_trial_retry_cache_failure(cache);
+        for(unsigned i=0;i<15;i++)out[i]=cache[i];
+    }else if(page>=5 && page<=12){
+        /* Read-only channel histogram: sent, authenticated reply, stereo ACK. */
+        uint32_t channels[37][3];ull_tone_trial_channel_stats(channels);
+        unsigned base=(page-5u)*15u;
+        for(unsigned i=0;i<15 && base+i<37u*3u;i++)
+            out[i]=channels[(base+i)/3u][(base+i)%3u];
+    }else if(page==13){
+        ull_raw_detached_parent_counters(out);
+        ull_tone_trial_control_retry_status(out+9);
+    }
+}
 
 typedef struct { int64_t us; uint16_t size; uint8_t bytes[512]; } packet_t;
 typedef struct {
@@ -140,6 +183,7 @@ static int nibble(char c) {
 }
 void app_main(void) {
     ESP_ERROR_CHECK(ull_usb_audio_init());
+    ull_usb_controls_set_diagnostics(usb_diagnostics);
     setvbuf(stdout,NULL,_IOLBF,0);
     // Do not erase NVS on error; the spare board has a preserved backup.
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -155,7 +199,7 @@ void app_main(void) {
     configASSERT(ull_pcm_stream_init());
     if(!ull_mic_stream_init())printf("{\"dsp_task_failed\":true}\n");
     xTaskCreate(print_rx,"rx_print",4096,NULL,5,NULL);
-    printf("{\"firmware\":\"blackshark-ull-link-0.19-controls06\",\"radio\":\"autonomous_keeper\"}\n");
+    printf("{\"firmware\":\"blackshark-ull-link-0.24-retry27ctrlslot\",\"radio\":\"autonomous_keeper\"}\n");
     fflush(stdout);fsync(fileno(stdout));
     static char line[2050]; unsigned used=0; bool overflow=false; static uint8_t data[1024];
     for (;;) {
@@ -169,7 +213,7 @@ void app_main(void) {
         last_host=esp_timer_get_time();
         line[used]=0;
         if(!overflow && used==1 && line[0]=='?') {
-            printf("{\"firmware\":\"blackshark-ull-link-0.19-controls06\",\"owner\":\"%s\",\"auto_state\":\"%s\",\"drops\":%" PRIu32 ",\"llcp_drops\":%" PRIu32 "}\n",
+            printf("{\"firmware\":\"blackshark-ull-link-0.24-retry27ctrlslot\",\"owner\":\"%s\",\"auto_state\":\"%s\",\"drops\":%" PRIu32 ",\"llcp_drops\":%" PRIu32 "}\n",
                    ull_auto_enabled()?"autonomous":"manual",ull_auto_state(),drops,llcp_drops);
         } else if(!overflow && used==1 && line[0]=='u') {
             ull_usb_audio_print_stats();

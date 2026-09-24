@@ -54,3 +54,4 @@ bool ull_raw_control_auto_get(void);
 unsigned ull_raw_control_probe_remaining(void);
 /* Console-only sanitized, individually atomic approximate counters. */
 void ull_raw_detached_parent_status(void);
+void ull_raw_detached_parent_counters(uint32_t out[9]);
