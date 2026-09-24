@@ -1,0 +1,10 @@
+[mapping:ull_bridge_crypto]
+archive: libmbedcrypto.a
+entries:
+    aes:mbedtls_internal_aes_encrypt (noflash)
+    aes:FSb (noflash_data)
+    aes:FT0 (noflash_data)
+    aes:FT1 (noflash_data)
+    aes:FT2 (noflash_data)
+    aes:FT3 (noflash_data)
+    ccm (noflash_text)

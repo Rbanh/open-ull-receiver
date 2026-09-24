@@ -1,0 +1,23 @@
+# Per-owner credentials and externally obtained code must never enter Git.
+/firmware/radio/private/
+/firmware/radio/components/ull_usb/tinyusb-0.18.0/
+/firmware/codec/components/ull_pcm_codec/reference/
+
+# Build products, dumps, logs, captures, and local environments.
+**/.pio/
+**/build/
+**/__pycache__/
+*.bin
+*.elf
+*.map
+*.log
+*.jsonl
+*.wav
+*.pcap
+*.pcapng
+*.key
+*.pem
+*.zip
+*.tar
+*.tar.gz
+.venv/

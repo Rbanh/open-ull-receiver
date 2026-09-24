@@ -1,0 +1,1167 @@
+diff -ruN a/floating_point/adjust_global_gain.c b/floating_point/adjust_global_gain.c
+--- a/floating_point/adjust_global_gain.c	2026-09-24 13:46:12.734352701 -0400
++++ b/floating_point/adjust_global_gain.c	2026-09-16 01:26:40.660030606 -0400
+@@ -57,7 +57,7 @@
+         delta = gg_p3[fs_idx] / 48.0;
+     }
+ 
+-    delta  = round(delta);
++    delta  = roundf(delta);
+     delta2 = delta + 2;
+ 
+     *gainChange = 0;
+diff -ruN a/floating_point/com_entropy.c b/floating_point/com_entropy.c
+--- a/floating_point/com_entropy.c	2026-09-24 13:46:12.734352701 -0400
++++ b/floating_point/com_entropy.c	2026-09-16 01:26:40.660156608 -0400
+@@ -13,7 +13,7 @@
+ {
+     LC3_INT16 minBits;
+ 
+-    minBits = ceil(LC3_LOGTWO(N >> 1));
++    minBits = ceilf(LC3_LOGTWO(N >> 1));
+ #ifdef CR9_C_ADD_1p25MS
+     /* minimum of 2 spare bits */
+     if (((1 << minBits) - (N >> 1)) < 2) 
+diff -ruN a/floating_point/dct4.c b/floating_point/dct4.c
+--- a/floating_point/dct4.c	2026-09-24 13:46:12.734560362 -0400
++++ b/floating_point/dct4.c	2026-09-16 01:16:36.571970021 -0400
+@@ -9,7 +9,7 @@
+ 
+ #include "functions.h"
+ 
+-void dct2_init(Dct2* dct, int length)
++void dct2_init(Dct2* dct, LC3_INT length)
+ {
+     assert(length <= MAX_LEN);
+     dct->length = length;
+@@ -26,8 +26,8 @@
+ 
+ void dct2_apply(Dct2* dct, const LC3_FLOAT* input, LC3_FLOAT* output)
+ {
+-    Complex   tmp1[MAX_LEN];
+-    Complex   tmp2[MAX_LEN];
++    Complex   tmp1[16];
++    Complex   tmp2[16];
+     int       i;
+     assert(input != output);
+ 
+@@ -45,7 +45,7 @@
+ }
+ 
+ 
+-void dct4_init(Dct4* dct, int length)
++void dct4_init(Dct4* dct, LC3_INT length)
+ {
+     int i;
+     assert(length <= MAX_LEN);
+@@ -71,7 +71,7 @@
+ 
+ void dct4_apply(Dct4* dct, const LC3_FLOAT* input, LC3_FLOAT* output)
+ {
+-    Complex     tmp2[MAX_LEN / 2];
++    Complex     tmp2[480 / 2];
+     int         i    = 0;
+     Complex*    tmp1 = (Complex*)output;
+     const int   len  = dct->length;
+diff -ruN a/floating_point/dec_lc3_fl.c b/floating_point/dec_lc3_fl.c
+--- a/floating_point/dec_lc3_fl.c	2026-09-24 13:46:12.734560362 -0400
++++ b/floating_point/dec_lc3_fl.c	2026-09-16 15:41:41.786173966 -0400
+@@ -216,12 +216,12 @@
+     if (h_DecSetup->concealMethod == 4 || bfi != 1 )
+     {
+         ProcessingIMDCT_fl(h_DecSetup->sqQdec_fl, decoder->frame_length, decoder->imdct_win, decoder->imdct_winLen, decoder->imdct_laZeros,
+-                           h_DecSetup->imdct_mem, h_DecSetup->x_fl, &h_DecSetup->dct4structImdct);
++                           h_DecSetup->imdct_mem, h_DecSetup->x_fl, &h_DecSetup->dct4structImdct, h_DecSetup->workspace);
+     }
+ 
+     processPlcUpdate_fl(h_DecSetup->PlcAdvSetup
+                         , decoder->frame_length, h_DecSetup->x_fl, h_DecSetup->scf_q,
+-                        &h_DecSetup->PlcSetup.nbLostCmpt, &h_DecSetup->PlcNsSetup.cum_alpha, bfi, &h_DecSetup->PlcSetup.prevBfi, &h_DecSetup->PlcSetup.prevprevBfi);
++                        &h_DecSetup->PlcSetup.nbLostCmpt, &h_DecSetup->PlcNsSetup.cum_alpha, bfi, &h_DecSetup->PlcSetup.prevBfi, &h_DecSetup->PlcSetup.prevprevBfi, h_DecSetup->workspace);
+ 
+     /* LTPF decoder */
+     process_ltpf_decoder_fl(h_DecSetup->x_fl, decoder->frame_length, h_DecSetup->x_fl, decoder->fs,
+@@ -236,13 +236,13 @@
+                             &h_DecSetup->ltpf_mem_pitch_prev, &h_DecSetup->ltpf_mem_pitch_fr_prev, &h_DecSetup->ltpf_mem_beta_idx_prev, &h_DecSetup->ltpf_mem_gain_prev,
+                             &h_DecSetup->ltpf_pitch_stability_counter, &h_DecSetup->ltpf_gain_step, h_DecSetup->ltpf_conf_beta_max
+ #endif
+-                           );
++                           , h_DecSetup->workspace);
+ 
+     {
+         /* Round, scale and copy output to output buffer */
+         if (bps == 16) {
+             for (i = 0; i < decoder->frame_length; i++) {
+-                LC3_FLOAT tmp        = round(h_DecSetup->x_fl[i]);
++                LC3_FLOAT tmp        = roundf(h_DecSetup->x_fl[i]);
+                 ((int16_t*)s_out)[i] = (int16_t)fmaxf(fminf(tmp, 32767), -32768);
+             }
+         } else {
+diff -ruN a/floating_point/defines.h b/floating_point/defines.h
+--- a/floating_point/defines.h	2026-09-24 13:46:12.734560362 -0400
++++ b/floating_point/defines.h	2026-09-16 01:35:57.260911951 -0400
+@@ -10,6 +10,12 @@
+ #ifndef DEFINES_H
+ #define DEFINES_H
+ 
++#ifdef ESP_PLATFORM
++#define ULL_CODEC_HOT __attribute__((section(".iram1")))
++#else
++#define ULL_CODEC_HOT
++#endif
++
+ #include "stdint.h"
+ 
+ 
+diff -ruN a/floating_point/enc_lc3_fl.c b/floating_point/enc_lc3_fl.c
+--- a/floating_point/enc_lc3_fl.c	2026-09-24 13:46:12.735560383 -0400
++++ b/floating_point/enc_lc3_fl.c	2026-09-16 02:23:35.247981540 -0400
+@@ -8,24 +8,35 @@
+ ******************************************************************************/
+ 
+ #include "functions.h"
++#ifdef ESP_PLATFORM
++extern int ull_codec_profile_active;
++extern int64_t esp_timer_get_time(void);
++extern void ull_pcm_detail_time(unsigned stage,uint32_t elapsed);
++#define PCM_STAMP(n) do { if(ull_codec_profile_active) { int64_t now=esp_timer_get_time(); ull_pcm_detail_time(n,(uint32_t)(now-stage_begin)); stage_begin=now; } } while(0)
++#else
++#define PCM_STAMP(n) ((void)0)
++#endif
+ 
+ #ifdef  FIX_BOTH_1p25_ALLOC_SPECTRUM
+ #  include <assert.h>
+ #endif 
+ 
+-static void Enc_LC3PLUS_Channel_fl(LC3PLUS_Enc* encoder, int channel, int32_t* s_in, uint8_t* bytes, int bps
++static ULL_CODEC_HOT void Enc_LC3PLUS_Channel_fl(LC3PLUS_Enc* encoder, int channel, int32_t* s_in, uint8_t* bytes, int bps
+ , LC3_INT32 bfi_ext
+ )
+ {
+     EncSetup* h_EncSetup;
++#ifdef ESP_PLATFORM
++    int64_t stage_begin=ull_codec_profile_active?esp_timer_get_time():0;
++#endif
+ 
+     LC3_INT s_12k8_len = 0, T0_out = 0, ltpfBits = 0, BW_cutoff_idx = 0, tns_numfilters = 0, quantizedGain = 0,
+         quantizedGainMin = 0, nbits = 0, nbits2 = 0, lastnz = 0, lsbMode = 0, gainChange = 0, bp_side = 0,
+         mask_side = 0, fac_ns_idx = 0, numResBits = 0, tns_order[2] = {0}, i = 0;
+     LC3_FLOAT normcorr = 0, gain = 0;
+ 
+-    LC3_FLOAT d_fl[MAX_LEN]                        = {0};
+-    LC3_INT   q_d[MAX_LEN]                         = {0};
++    LC3_FLOAT d_fl[480]                        = {0};
++    LC3_INT   q_d[480]                         = {0};
+     LC3_INT   indexes[TNS_NUMFILTERS_MAX * MAXLAG] = {0};
+ 
+ #  ifdef CR9_C_ADD_1p25MS_LRSNS
+@@ -69,48 +80,71 @@
+     /* MDCT */
+     processMdct_fl(h_EncSetup->s_in_scaled, d_fl, &h_EncSetup->mdctStruct);
+ 
+-    /* 12.8 kHz resampler */
+-    process_resamp12k8_fl(h_EncSetup->s_in_scaled, encoder->frame_length, h_EncSetup->r12k8_mem_in,
+-                          encoder->r12k8_mem_in_len, h_EncSetup->r12k8_mem_50, h_EncSetup->r12k8_mem_out,
+-                          encoder->r12k8_mem_out_len, h_EncSetup->s_12k8, &s_12k8_len, encoder->fs_idx,
+-                          encoder->frame_dms, encoder->fs);
+-
+-    /* Pitch estimation */
+-    processOlpa_fl(h_EncSetup->s_12k8, h_EncSetup->olpa_mem_s12k8, h_EncSetup->olpa_mem_s6k4,
+-                   &h_EncSetup->olpa_mem_pitch,
+-                   &h_EncSetup->pitch_flag,
+-                   &T0_out, &normcorr, s_12k8_len, encoder->frame_dms);
+-
+-    /* LTPF encoder */
+-    process_ltpf_coder_fl(h_EncSetup->s_12k8, s_12k8_len + 1, h_EncSetup->ltpf_enable, T0_out, normcorr,
+-                          encoder->frame_dms, h_EncSetup->ltpf_mem_in, encoder->ltpf_mem_in_len,
+-#ifdef CR9_C_ADD_1p25MS
+-                          h_EncSetup->ltpf_mem_normcorr,
+-#else
+-                          &h_EncSetup->ltpf_mem_normcorr,
+-#endif
+-                          &h_EncSetup->ltpf_mem_ltpf_on,
+-                          &h_EncSetup->ltpf_mem_pitch, h_EncSetup->ltpf_param, &h_EncSetup->ltpf_mem_mem_normcorr,
+-                          &ltpfBits
+-                          , encoder->hrmode
+-#ifdef CR9_C_ADD_1p25MS
+-#ifdef FIX_TX_RX_STRUCT_STEREO
+-#ifdef NEW_SIGNALLING_SCHEME_1p25
+-                           ,&h_EncSetup->Tx_ltpf
+-#else
+-                           ,h_EncSetup->Tx_ltpf
+-#endif
+-#else
+-                          , encoder->Tx_ltpf
+-#endif
+-#endif
+-);
++    PCM_STAMP(0);
++    /* HR5ms already disables the decoder LTPF. Optional pitch metadata is
++     * omitted in this fixed profile to avoid the resample/OLPA/pitch search.
++     * The normal no-pitch syntax costs one bit; spectrum receives the rest. */
++    if (encoder->fs == 96000 && encoder->hrmode == 1 &&
++        encoder->frame_dms == LC3PLUS_FRAME_DURATION_5MS &&
++        h_EncSetup->ltpf_enable == 0) {
++        h_EncSetup->ltpf_param[0] = 0;
++        h_EncSetup->ltpf_param[1] = 0;
++        h_EncSetup->ltpf_param[2] = 0;
++        h_EncSetup->ltpf_mem_ltpf_on = 0;
++        h_EncSetup->ltpf_mem_pitch = 0;
++        ltpfBits = 1;
++        normcorr = 0.0f;
++        PCM_STAMP(1);
++        PCM_STAMP(2);
++        PCM_STAMP(3);
++    } else {
++        /* 12.8 kHz resampler */
++        process_resamp12k8_fl(h_EncSetup->s_in_scaled, encoder->frame_length, h_EncSetup->r12k8_mem_in,
++                              encoder->r12k8_mem_in_len, h_EncSetup->r12k8_mem_50, h_EncSetup->r12k8_mem_out,
++                              encoder->r12k8_mem_out_len, h_EncSetup->s_12k8, &s_12k8_len, encoder->fs_idx,
++                              encoder->frame_dms, encoder->fs);
++
++        PCM_STAMP(1);
++        /* Pitch estimation */
++        processOlpa_fl(h_EncSetup->s_12k8, h_EncSetup->olpa_mem_s12k8, h_EncSetup->olpa_mem_s6k4,
++                       &h_EncSetup->olpa_mem_pitch,
++                       &h_EncSetup->pitch_flag,
++                       &T0_out, &normcorr, s_12k8_len, encoder->frame_dms);
++
++        PCM_STAMP(2);
++        /* LTPF encoder */
++        process_ltpf_coder_fl(h_EncSetup->s_12k8, s_12k8_len + 1, h_EncSetup->ltpf_enable, T0_out, normcorr,
++                              encoder->frame_dms, h_EncSetup->ltpf_mem_in, encoder->ltpf_mem_in_len,
++    #ifdef CR9_C_ADD_1p25MS
++                              h_EncSetup->ltpf_mem_normcorr,
++    #else
++                              &h_EncSetup->ltpf_mem_normcorr,
++    #endif
++                              &h_EncSetup->ltpf_mem_ltpf_on,
++                              &h_EncSetup->ltpf_mem_pitch, h_EncSetup->ltpf_param, &h_EncSetup->ltpf_mem_mem_normcorr,
++                              &ltpfBits
++                              , encoder->hrmode
++    #ifdef CR9_C_ADD_1p25MS
++    #ifdef FIX_TX_RX_STRUCT_STEREO
++    #ifdef NEW_SIGNALLING_SCHEME_1p25
++                               ,&h_EncSetup->Tx_ltpf
++    #else
++                               ,h_EncSetup->Tx_ltpf
++    #endif
++    #else
++                              , encoder->Tx_ltpf
++    #endif
++    #endif
++    );
+ 
++        PCM_STAMP(3);
++    }
+     /* Attack detector */
+     attack_detector_fl(h_EncSetup->s_in_scaled, encoder->frame_length, encoder->fs, &h_EncSetup->attdec_position,
+                        &h_EncSetup->attdec_acc_energy, &h_EncSetup->attdec_detected, h_EncSetup->attdec_filter_mem,
+                        h_EncSetup->attack_handling, encoder->attdec_nblocks, encoder->attdec_hangover_thresh);
+ 
++    PCM_STAMP(4);
+     /* Per-band energy */
+     processPerBandEnergy_fl(encoder->bands_number, encoder->bands_offset, encoder->hrmode, encoder->frame_dms, h_EncSetup->ener, d_fl);
+     /* Near Nyquist detector */
+@@ -142,6 +176,7 @@
+ #endif
+                             );
+ 
++    PCM_STAMP(5);
+     /* SNS Quantizer */
+ #  ifdef CR9_C_ADD_1p25MS_LRSNS
+     if (encoder->frame_dms == LC3PLUS_FRAME_DURATION_1p25MS)
+@@ -164,12 +199,15 @@
+     process_snsQuantizesScf_Enc(h_EncSetup->scf, h_EncSetup->L_scf_idx, h_EncSetup->scf_q, h_EncSetup->dct2StructSNS);
+ #endif
+ 
++    PCM_STAMP(6);
+     /* SNS Interpolation */
+     processSnsInterpolateScf_fl(h_EncSetup->scf_q, 1, encoder->bands_number, h_EncSetup->int_scf);
+ 
++    PCM_STAMP(7);
+     /* MDCT shaping */
+     processMdctShaping_fl(d_fl, h_EncSetup->int_scf, encoder->bands_offset, encoder->bands_number);
+ 
++    PCM_STAMP(8);
+     /* Bandwidth controller */
+     if (encoder->bandwidth < encoder->fs / 2) {
+         process_cutoff_bandwidth(d_fl, encoder->yLen, encoder->bw_ctrl_cutoff_bin);
+@@ -200,6 +238,7 @@
+         tns_order[0] = 0;
+         h_EncSetup->tns_bits = tns_numfilters;
+     }
++    PCM_STAMP(9);
+     /* Global Gain Estimation */
+     h_EncSetup->targetBitsQuant = h_EncSetup->targetBitsInit - (h_EncSetup->tns_bits + ltpfBits);
+ 
+@@ -219,6 +258,7 @@
+ 
+     );
+ 
++    PCM_STAMP(10);
+     /* 1. Quantization */
+     processQuantizeSpec_fl(d_fl, gain, q_d, encoder->yLen, h_EncSetup->total_bits, &nbits, &nbits2, encoder->fs,
+                            &lastnz, h_EncSetup->codingdata, &lsbMode, -1, h_EncSetup->targetBitsQuant, encoder->hrmode
+@@ -226,6 +266,7 @@
+ 
+     h_EncSetup->mem_specBits = nbits;
+ 
++    PCM_STAMP(11);
+     /* Global Gain Adjustment */
+     processAdjustGlobalGain_fl(&quantizedGain, quantizedGainMin, h_EncSetup->quantizedGainOff, &gain,
+                                h_EncSetup->targetBitsQuant, h_EncSetup->mem_specBits, &gainChange, encoder->fs_idx
+@@ -242,6 +283,7 @@
+         );
+     }
+ 
++    PCM_STAMP(12);
+     /* Noise factor */
+     if (h_EncSetup->lfe == 0)
+     {
+@@ -252,6 +294,7 @@
+     {
+         fac_ns_idx = 7;
+     }
++    PCM_STAMP(13);
+     /* Residual Coding */
+     if (lsbMode == 0) {
+         processResidualCoding_fl(d_fl, q_d, gain, encoder->yLen, h_EncSetup->targetBitsQuant, nbits2, h_EncSetup->resBits, &numResBits, encoder->hrmode
+@@ -263,6 +306,7 @@
+         numResBits = 0;
+     }
+ 
++    PCM_STAMP(14);
+     /* Entropy encoding */
+     processEncoderEntropy_fl(bytes, &bp_side, &mask_side, h_EncSetup->targetBytes, encoder->BW_cutoff_bits,
+                              BW_cutoff_idx, lastnz, encoder->yLen, lsbMode, quantizedGain, tns_numfilters, tns_order,
+@@ -277,13 +321,15 @@
+ #endif
+     );
+ 
++    PCM_STAMP(15);
+     /* Artithmetic encoding */
+     processAriEncoder_fl(bytes, bp_side, mask_side, q_d, tns_order, tns_numfilters, indexes, lastnz,
+                          h_EncSetup->codingdata,
+                          h_EncSetup->resBits, numResBits, lsbMode, h_EncSetup->targetBitsAri,
+                          h_EncSetup->enable_lpc_weighting);
+ 
+-    if (encoder->combined_channel_coding == 0 && h_EncSetup->n_pc > 0)
++    PCM_STAMP(16);
++    if (0) /* Fixed profile guard below proves EP off; no partial FEC reorder. */
+     {
+         LC3_INT32 xbuf[MAX_LEN] = {0}, nf_seed, tns_idx[M], zero_frame, nbits_residual, residualPresent, b_left, spec_inv_idx;
+ 
+@@ -304,6 +350,15 @@
+ , LC3_INT32 bfi_ext
+ )
+ {
++    /* This component supports only the measured BlackShark profile. Bounds in
++     * MDCT, DCT4 and the channel spectrum rely on this runtime guard. */
++    if (encoder->fs != 96000 || encoder->fs_in != 96000 || encoder->channels != 2 ||
++        encoder->hrmode != 1 || encoder->frame_dms != LC3PLUS_FRAME_DURATION_5MS ||
++        encoder->frame_length != 480 || encoder->yLen > 480 ||
++        encoder->epmode != 0 || encoder->bitrate != 304000 || bps != 16 ||
++        encoder->channel_setup[0]->n_pc != 0 || encoder->channel_setup[1]->n_pc != 0 ||
++        encoder->channel_setup[0]->targetBytes != 95 || encoder->channel_setup[1]->targetBytes != 95)
++        return 0;
+     int      ch = 0, output_size = 0;
+     uint8_t* lc3buf = output;
+ 
+diff -ruN a/floating_point/estimate_global_gain.c b/floating_point/estimate_global_gain.c
+--- a/floating_point/estimate_global_gain.c	2026-09-24 13:46:12.735560383 -0400
++++ b/floating_point/estimate_global_gain.c	2026-09-16 01:26:40.660307971 -0400
+@@ -70,7 +70,7 @@
+     }
+ 
+     *old_targetBits = nbitsSQ;
+-    nbitsSQ         = nbitsSQ + round(*targetBitsOff);
++    nbitsSQ         = nbitsSQ + roundf(*targetBitsOff);
+ 
+     x_max = array_max_abs(x, lg);
+ 
+@@ -80,8 +80,8 @@
+         LC3_FLOAT thresh = 2*frame_ms*1.25;
+         for (i = 0; i < lg; i++)
+         {
+-                M0 += fabs(x[i]);
+-                M1 += i*fabs(x[i]);
++                M0 += fabsf(x[i]);
++                M1 += i*fabsf(x[i]);
+         }
+ 
+         rB_offset = 8 * (1 - MIN(M1/M0, thresh) / thresh);
+@@ -104,7 +104,7 @@
+         /* Prevent positive rounding errors from LC3_LOG10 function */
+         ind_min = 28.0 * LC3_LOGTEN(g_min);
+ 
+-        ind_min = ceil(ind_min + LC3_FABS(ind_min) * LC3_EPS);
++        ind_min = ceilf(ind_min + LC3_FABS(ind_min) * LC3_EPS);
+ 
+         assert(LC3_POW(10, ind_min / 28.0) >= g_min);
+         assert(ind_min <= (255 + quantizedGainOff));
+@@ -278,7 +278,7 @@
+                 if (frame_ms == LC3PLUS_FRAME_DURATION_1p25MS && tuples[bw_idx] == 3)
+ #endif 
+                 {   /* 3 tuple loop */
+-                    N = 3 * (int)ceil(lg / 3.0);
++                    N = 3 * (int)ceilf(lg / 3.0f);
+ 
+ #ifdef CR14_A_ADD_1p25MS_HR
+                     assert( lg == 50 || lg == 40 || lg == 30 || lg == 20 || lg == 60 || lg == 120 );
+diff -ruN a/floating_point/fft/fft80_exact.h b/floating_point/fft/fft80_exact.h
+--- a/floating_point/fft/fft80_exact.h	1969-12-31 19:00:00.000000000 -0500
++++ b/floating_point/fft/fft80_exact.h	2026-09-16 19:14:30.727928946 -0400
+@@ -0,0 +1,37 @@
++/* Isolated prototype: exact 80-point PFA factorization used by the current
++ * LC3plus generic path, 16 then 5. Include after fft16/fft5 definitions.
++ * No change to any floating arithmetic inside either kernel.
++ * The fused form avoids the generic final 80-complex scratch-to-x copy.
++ */
++static __attribute__((noinline)) void fft80_exact(float *x)
++{
++    float tmp[160];
++    int idx = 0, at = 0;
++    for (int row = 0; row < 5; ++row) {
++        for (int col = 0; col < 15; ++col) {
++            tmp[at++] = x[2 * idx];
++            tmp[at++] = x[2 * idx + 1];
++            idx += 65; /* 5 * inverse(5,16) = 5 * 13 */
++            if (idx > 80) idx -= 80;
++        }
++        tmp[at++] = x[2 * idx];
++        tmp[at++] = x[2 * idx + 1];
++        ++idx;
++    }
++    for (int row = 0; row < 5; ++row) fft16(tmp + 32 * row);
++    for (int col = 0; col < 16; ++col) {
++        float column[10];
++        for (int row = 0; row < 5; ++row) {
++            column[2 * row] = tmp[2 * (16 * row + col)];
++            column[2 * row + 1] = tmp[2 * (16 * row + col) + 1];
++        }
++        fft5(column);
++        idx = col * 5;
++        for (int row = 0; row < 5; ++row) {
++            x[2 * idx] = column[2 * row];
++            x[2 * idx + 1] = column[2 * row + 1];
++            idx += 16;
++            if (idx > 80) idx -= 80;
++        }
++    }
++}
+diff -ruN a/floating_point/fft/fft_15_16.h b/floating_point/fft/fft_15_16.h
+--- a/floating_point/fft/fft_15_16.h	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/fft/fft_15_16.h	2026-09-16 01:35:57.261729148 -0400
+@@ -220,7 +220,7 @@
+     *vec++ = i14 + i6 - i8;
+ }
+ 
+-static void fft16(LC3_FLOAT* vec)
++static ULL_CODEC_HOT void fft16(LC3_FLOAT* vec)
+ {
+     const LC3_FLOAT INV_SQRT2    = 7.071067811865475e-1;
+     const LC3_FLOAT COS_PI_DIV8  = 9.238795325112867e-1;
+diff -ruN a/floating_point/fft/fft_240_480.h b/floating_point/fft/fft_240_480.h
+--- a/floating_point/fft/fft_240_480.h	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/fft/fft_240_480.h	2026-09-16 01:35:57.261610596 -0400
+@@ -12,7 +12,7 @@
+ #error "this file must not be included"
+ #endif
+ 
+-static void fft240(LC3_FLOAT* in)
++static ULL_CODEC_HOT void fft240(LC3_FLOAT* in)
+ {
+     const LC3_INT table1[240] = {
+         0,   16,  32,  48,  64,  80,  96,  112, 128, 144, 160, 176, 192, 208, 224, 225, 1,   17,  33,  49,  65,  81,
+diff -ruN a/floating_point/fft/iisfft.c b/floating_point/fft/iisfft.c
+--- a/floating_point/fft/iisfft.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/fft/iisfft.c	2026-09-16 19:14:30.726780922 -0400
+@@ -28,20 +28,19 @@
+ #include "fft_240_480.h"
+ #include "fft_384_768.h"
+ #include "fft_generic.h"
++#include "fft80_exact.h"
+ 
+ 
+ void LC3_iisfft_apply(Iisfft* handle, LC3_FLOAT* x)
+ {
+-    if (handle->sign == -1) {
+-        if (!fft_n(x, handle->length))
+-        {
+-            LC3_FLOAT scratch[2*MAX_LEN];
+-            pfaDFT(x, handle->length, scratch, handle->num_factors, handle->factors, handle->scratch2,
+-                   handle->isPrime);
+-        }
+-    } else {
+-        assert(0);
+-    }
++    /* Fixed profile: preserve the encoder 240/16 paths and use exact80
++     * for microphone IMDCT. Keeping generic dispatch unreachable also
++     * keeps fft15 inlined inside RAM-resident fft240. */
++    if (handle->sign != -1) abort();
++    if (handle->length == 240) fft240(x);
++    else if (handle->length == 16) fft16(x);
++    else if (handle->length == 80) fft80_exact(x);
++    else abort();
+ }
+ 
+ /* returns 1 if there is no specialized function for length or 1 if a scratch needs to be allocated.
+diff -ruN a/floating_point/functions.h b/floating_point/functions.h
+--- a/floating_point/functions.h	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/functions.h	2026-09-16 13:55:45.542812581 -0400
+@@ -169,9 +169,9 @@
+ void processPerBandEnergy_fl(LC3_INT bands_number, const LC3_INT* acc_coeff_per_band, LC3_INT16 hrmode, LC3PLUS_FrameDuration frame_dms, LC3_FLOAT* d2, LC3_FLOAT* d);
+ 
+ void ProcessingIMDCT_fl(LC3_FLOAT* y, LC3_INT yLen, const LC3_FLOAT* win, LC3_INT winLen, LC3_INT last_zeros, LC3_FLOAT* mem, LC3_FLOAT* x,
+-                        Dct4* dct);
++                        Dct4* dct, DecoderWorkspace *scratch);
+ 
+-void ProcessingITDA_WIN_OLA_fl(LC3_FLOAT* x_tda, LC3_INT32 yLen, const LC3_FLOAT* win, LC3_INT32 winLen, LC3_INT32 last_zeros, LC3_FLOAT* mem, LC3_FLOAT* x);
++void ProcessingITDA_WIN_OLA_fl(LC3_FLOAT* x_tda, LC3_INT32 yLen, const LC3_FLOAT* win, LC3_INT32 winLen, LC3_INT32 last_zeros, LC3_FLOAT* mem, LC3_FLOAT* x, DecoderWorkspace *scratch);
+ 
+ void process_ltpf_coder_fl(LC3_FLOAT* xin, LC3_INT xLen, LC3_INT ltpf_enable, LC3_INT pitch_ol, LC3_FLOAT pitch_ol_norm_corr, LC3PLUS_FrameDuration frame_dms,
+                            LC3_FLOAT* mem_old_x, LC3_INT memLen, LC3_FLOAT* mem_norm_corr_past, LC3_INT* mem_on, LC3_FLOAT* mem_pitch,
+@@ -202,7 +202,7 @@
+                               LC3_FLOAT* gain_step,
+                               LC3_FLOAT conf_beta_max
+ #endif
+-);
++, DecoderWorkspace *scratch);
+ 
+ void process_resamp12k8_fl(LC3_FLOAT x[], LC3_INT x_len, LC3_FLOAT mem_in[], LC3_INT mem_in_len, LC3_FLOAT mem_50[], LC3_FLOAT mem_out[],
+                            LC3_INT mem_out_len, LC3_FLOAT y[], LC3_INT* y_len, LC3_INT fs_idx, LC3PLUS_FrameDuration frame_dms, LC3_INT fs);
+@@ -240,7 +240,7 @@
+ int       Enc_LC3PLUS_fl(LC3PLUS_Enc* encoder, void** input, LC3_UINT8* output, int bps
+ , LC3_INT32 bfi_ext
+ );
+-LC3PLUS_Error Dec_LC3PLUS_fl(LC3PLUS_Dec* decoder, LC3_UINT8* input, int input_bytes, void** output, int bps, int bfi_ext);
++LC3PLUS_Error Dec_LC3PLUS_fl(LC3PLUS_Dec* decoder, LC3_UINT8* input, LC3_INT32 input_bytes, void** output, LC3_INT32 bps, LC3_INT32 bfi_ext);
+ 
+ void* balloc(void* base, size_t* base_size, size_t size);
+ 
+@@ -254,7 +254,7 @@
+                LC3_INT n_bandsPLC, LC3_INT16 hrmode, pcState *statePC);
+ 
+ void processPlcUpdate_fl(PlcAdvSetup *PlcAdvSetup, LC3_INT32 frame_length, LC3_FLOAT *syntM, LC3_FLOAT *scf_q,
+-             LC3_INT32 *nbLostCmpt, LC3_FLOAT *cum_alpha, LC3_INT32 bfi, LC3_INT32 *prevBfi, LC3_INT32 *prevprevBfi);
++             LC3_INT32 *nbLostCmpt, LC3_FLOAT *cum_alpha, LC3_INT32 bfi, LC3_INT32 *prevBfi, LC3_INT32 *prevprevBfi, DecoderWorkspace *scratch);
+ 
+ void processPlcUpdateSpec_fl(LC3_FLOAT *q_d_prev, LC3_FLOAT *q_d_fl_c, LC3_INT yLen);
+ 
+@@ -321,7 +321,7 @@
+ void      plc_phEcu_spec_ana(LC3_FLOAT* xfp, LC3_INT32 xfp_len, const LC3_FLOAT* whr, 
+               LC3_FLOAT* pfind_sensPtr, LC3_INT32* plocs,
+               LC3_INT32* n_plocs, LC3_FLOAT* f0est, Complex* x, LC3_INT32* x_len, 
+-              LC3_FLOAT* f0hzLtpBinPtr, LC3_FLOAT* f0gainLtpPtr, LC3_INT32 bw_idx, Fft* PhEcu_Fft);
++              LC3_FLOAT* f0hzLtpBinPtr, LC3_FLOAT* f0gainLtpPtr, LC3_INT32 bw_idx, Fft* PhEcu_Fft, DecoderWorkspace *scratch);
+ void      plc_phEcu_subst_spec(LC3_INT32* plocs, LC3_INT32 n_plocs, LC3_FLOAT* f0est, LC3_INT32 time_offs, Complex* X, LC3_INT32 X_len,
+                           LC3_FLOAT* mag_chg_gr, LC3_INT32 *seed, LC3_FLOAT* alpha, LC3_FLOAT* beta, LC3_FLOAT* Xavg,
+                           LC3_INT32 t_adv_in, LC3_INT32 Lprot, LC3_INT32 delta_corr,
+@@ -334,7 +334,7 @@
+                Complex *full_spec_dbg, LC3_FLOAT* ifft_out_dbg, LC3_FLOAT* xsubst_dbg, 
+                LC3_INT32 LA_ZEROS, LC3_INT32 LA, Fft* PhEcu_Ifft
+ 
+-   );
++   , DecoderWorkspace *scratch);
+ void plc_phEcu_tba_spect_Xavg(LC3_INT32 fs_idx, LC3_INT32 n_grp, LC3_FLOAT *oold_spec_shape, 
+                               LC3_FLOAT *oold_EwPtr,     LC3_FLOAT *old_spec_shape,   LC3_FLOAT *old_EwPtr, 
+                               LC3_FLOAT *gr_pow_left, LC3_FLOAT *gr_pow_right, LC3_FLOAT *Xavg);
+@@ -368,7 +368,7 @@
+      ,Fft* PhEcu_Fft,Fft* PhEcu_Ifft
+     , LC3_UINT8  plc_fadeout_type,                   
+ 	LC3_INT16 *nonpure_tone_flag_ptr   
+-);
++, DecoderWorkspace *scratch);
+ 
+ void processTdcPreemphasis_fl(LC3_FLOAT *in, LC3_FLOAT *pre_emph_factor, LC3_INT32 n_bands);
+ 
+@@ -380,7 +380,7 @@
+                                      LC3_INT32* fract, LC3_INT16* seed, LC3_FLOAT* gain_c, LC3_FLOAT* alpha, LC3_FLOAT* synth
+                                      , LC3_UINT8 plc_fadeout_type
+                         ,LC3_FLOAT*      alpha_type_2_table
+-);
++, DecoderWorkspace *scratch);
+ void* balloc(void* base, size_t* base_size, size_t size);
+ 
+ LC3_FLOAT type_2_fadeout(LC3_INT32 nbLostFramesInRow, LC3PLUS_FrameDuration frame_dms);
+diff -ruN a/floating_point/imdct.c b/floating_point/imdct.c
+--- a/floating_point/imdct.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/imdct.c	2026-09-16 13:55:45.713032685 -0400
+@@ -10,9 +10,9 @@
+ #include "functions.h"
+ 
+ /* Function expects already flipped window */
+-void ProcessingIMDCT_fl(LC3_FLOAT* y, LC3_INT yLen, const LC3_FLOAT* win, LC3_INT winLen, LC3_INT last_zeros, LC3_FLOAT* mem, LC3_FLOAT* x, Dct4* dct)
++void ProcessingIMDCT_fl(LC3_FLOAT* y, LC3_INT yLen, const LC3_FLOAT* win, LC3_INT winLen, LC3_INT last_zeros, LC3_FLOAT* mem, LC3_FLOAT* x, Dct4* dct, DecoderWorkspace *scratch)
+ {
+-    LC3_FLOAT x_tda[MAX_LEN], x_ov[2 * MAX_LEN];
++    LC3_FLOAT *x_tda=scratch->imdct_tda, *x_ov=scratch->imdct_ov;
+     LC3_INT   i, j;
+ 
+     /* Flip imdct window up to down */
+@@ -57,9 +57,9 @@
+     move_float(&mem[0], &x_ov[yLen + last_zeros], (winLen - (yLen + last_zeros)));
+ }
+ 
+-void ProcessingITDA_WIN_OLA_fl(LC3_FLOAT* x_tda, LC3_INT32 yLen, const LC3_FLOAT* win, LC3_INT32 winLen, LC3_INT32 last_zeros, LC3_FLOAT* mem, LC3_FLOAT* x)
++void ProcessingITDA_WIN_OLA_fl(LC3_FLOAT* x_tda, LC3_INT32 yLen, const LC3_FLOAT* win, LC3_INT32 winLen, LC3_INT32 last_zeros, LC3_FLOAT* mem, LC3_FLOAT* x, DecoderWorkspace *scratch)
+ {
+-    LC3_FLOAT x_ov[2 * MAX_LEN];
++    LC3_FLOAT *x_ov=scratch->imdct_ov;
+     LC3_INT32 i, j;
+ 
+     move_float(x_ov, &x_tda[yLen / 2], yLen / 2);
+diff -ruN a/floating_point/lc3plus.c b/floating_point/lc3plus.c
+--- a/floating_point/lc3plus.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/lc3plus.c	2026-09-16 01:15:21.558343321 -0400
+@@ -449,7 +449,7 @@
+     return LC3PLUS_OK;
+ }
+ 
+-LC3PLUS_Error lc3plus_dec_set_ep_enabled(LC3PLUS_Dec *decoder, int32_t ep_enabled)
++LC3PLUS_Error lc3plus_dec_set_ep_enabled(LC3PLUS_Dec *decoder, int ep_enabled)
+ {
+     RETURN_IF(decoder == NULL, LC3PLUS_NULL_ERROR);
+     decoder->ep_enabled = ep_enabled != 0;
+diff -ruN a/floating_point/lc3plus_fft.c b/floating_point/lc3plus_fft.c
+--- a/floating_point/lc3plus_fft.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/lc3plus_fft.c	2026-09-16 01:15:21.558511855 -0400
+@@ -12,7 +12,7 @@
+ #include "fft/iisfft.c"
+ #include "fft/cfft.c"
+ 
+-void fft_init(Fft* fft, int length)
++void fft_init(Fft* fft, LC3_INT length)
+ {
+     HANDLE_IIS_FFT handle = NULL;
+     IIS_FFT_ERROR error = 0;
+diff -ruN a/floating_point/ltpf_coder.c b/floating_point/ltpf_coder.c
+--- a/floating_point/ltpf_coder.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/ltpf_coder.c	2026-09-16 01:26:40.660487715 -0400
+@@ -221,7 +221,7 @@
+         if (pitch_int < RES4_PITCH_12K8) {
+             pitch_index = pitch_int * 4 + pitch_fr - (MIN_PITCH_12K8 * 4);
+         } else if (pitch_int < RES2_PITCH_12K8) {
+-            pitch_index = pitch_int * 2 + floor(pitch_fr / 2) - (RES4_PITCH_12K8 * 2) + ((RES4_PITCH_12K8 - MIN_PITCH_12K8) * 4);
++            pitch_index = pitch_int * 2 + floorf(pitch_fr / 2) - (RES4_PITCH_12K8 * 2) + ((RES4_PITCH_12K8 - MIN_PITCH_12K8) * 4);
+         } else {
+             pitch_index = pitch_int - RES2_PITCH_12K8 + ((RES4_PITCH_12K8 - MIN_PITCH_12K8) * 4) + ((RES2_PITCH_12K8 - RES4_PITCH_12K8) * 2);
+         }
+diff -ruN a/floating_point/ltpf_decoder.c b/floating_point/ltpf_decoder.c
+--- a/floating_point/ltpf_decoder.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/ltpf_decoder.c	2026-09-16 13:55:45.712581565 -0400
+@@ -84,14 +84,14 @@
+                               LC3_FLOAT* gain_step,
+                               LC3_FLOAT conf_beta_max
+ #endif 
+- )
++ , DecoderWorkspace *scratch)
+ {
+     LC3_INT i, j, n, N, L_past_x, N4, N34,
+         pitch_int, pitch_fr, p1, p2, L_past_y, inter_len, tilt_len = 0,
+         tilt_len_r, inter_len_r, old_x_len, old_y_len, fading_case, N4_D, N4_S;
+ 
+     LC3_FLOAT conf_alpha, gain, a1[12], a2[12], b1[11], b2[11],
+-          buf_x[4 * MAX_LEN], buf_y[4 * MAX_LEN], buf_z[4 * MAX_LEN], pitch, sum1, sum2;
++          *buf_x=scratch->ltpf, *buf_y=scratch->ltpf+4*MAX_LEN, *buf_z=scratch->ltpf+8*MAX_LEN, pitch, sum1, sum2;
+ 	LC3_FLOAT *p_x, *p_y, *p_y2, *p_x_init, *p_y_init, *p_a1, *p_b1, *p_a2, *p_b2, fade_fac, current_fade_fac_up, current_fade_fac_down;
+     LC3_FLOAT pitch_delta;
+     const LC3_FLOAT *inter_filter[4], *tilt_filter[4];
+diff -ruN a/floating_point/mdct.c b/floating_point/mdct.c
+--- a/floating_point/mdct.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/mdct.c	2026-09-16 16:36:15.899532690 -0400
+@@ -149,9 +149,9 @@
+     }
+ }
+ 
+-void mdct_apply(const LC3_FLOAT* input, LC3_FLOAT* output, Mdct* mdct)
++static __attribute__((noinline)) void mdct_apply_general(const LC3_FLOAT* input, LC3_FLOAT* output, Mdct* mdct)
+ {
+-    LC3_FLOAT tmp[MAX_LEN * 2];
++    LC3_FLOAT tmp[480 * 2]; /* Encoder guarded to fixed 5 ms at 96 kHz. */
+     LC3_INT   i;
+     LC3_INT hlen;
+ 
+@@ -173,4 +173,48 @@
+     dct4_apply(&mdct->dct, tmp, output);
+ }
+ 
++
++/* The encoder profile supplies 480 current samples, 360 history samples and
++ * 120 trailing zero samples. Fold directly into the DCT input instead of
++ * materializing, windowing and recopying a 960-sample concatenation.
++ * Each product must round before the following add/subtract, as it does in
++ * the reference mult_vec() pass. Do not contract these into fused operations.
++ */
++#if defined(__GNUC__) && !defined(__clang__)
++__attribute__((noinline, noclone, optimize("fp-contract=off", "no-partial-inlining")))
++#endif
++void mdct_apply(const LC3_FLOAT* input, LC3_FLOAT* output, Mdct* mdct)
++{
++#if defined(__clang__)
++#pragma clang fp contract(off)
++#endif
++    if (mdct->length != 480 || mdct->mem_length != 360 || mdct->leading_zeros != 120) {
++        mdct_apply_general(input, output, mdct);
++        return;
++    }
++    LC3_FLOAT folded[480];
++    const LC3_FLOAT *w = mdct->window;
++    const LC3_FLOAT *history = mdct->mem;
++    for (int i = 0; i < 120; ++i) {
++        LC3_FLOAT a = input[359 - i] * w[719 - i];
++        LC3_FLOAT b = input[360 + i] * w[720 + i];
++        folded[i] = -a - b;
++
++        a = input[239 - i] * w[599 - i];
++        b = 0.0f * w[840 + i];
++        folded[120 + i] = -a - b;
++
++        a = history[i] * w[i];
++        b = input[119 - i] * w[479 - i];
++        folded[240 + i] = a - b;
++
++        a = history[120 + i] * w[120 + i];
++        b = history[359 - i] * w[359 - i];
++        folded[360 + i] = a - b;
++    }
++    /* Update only after all history reads, preserving the same next state. */
++    move_float(mdct->mem, input + 120, 360);
++    dct4_apply(&mdct->dct, folded, output);
++}
++
+ void processMdct_fl(LC3_FLOAT* in, LC3_FLOAT* out, Mdct* mdctStruct) { mdct_apply(in, out, mdctStruct); }
+diff -ruN a/floating_point/noise_factor.c b/floating_point/noise_factor.c
+--- a/floating_point/noise_factor.c	2026-09-24 13:46:12.736015377 -0400
++++ b/floating_point/noise_factor.c	2026-09-16 01:26:40.660628718 -0400
+@@ -105,7 +105,7 @@
+                 sumZeroLines += zeroLines[i];
+             }
+ 
+-            m = floor(sumZeroLines / kZeroLines);
++            m = floorf(sumZeroLines / kZeroLines);
+ 
+             for (i = 0; i < kZeroLines; i++) {
+                 if (zeroLines[i] <= m) {
+@@ -126,7 +126,7 @@
+ 
+     }
+ 
+-    idx = round(8 - 16 * fac_ns_unq);
++    idx = roundf(8 - 16 * fac_ns_unq);
+     idx = MIN(MAX(idx, 0), 7);
+ 
+     *fac_ns_idx = idx;
+diff -ruN a/floating_point/plc_main.c b/floating_point/plc_main.c
+--- a/floating_point/plc_main.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/plc_main.c	2026-09-16 13:55:45.712933513 -0400
+@@ -15,7 +15,7 @@
+                LC3_INT n_bandsPLC, LC3_INT16 hrmode, pcState *statePC
+ )
+ {
+-    LC3_FLOAT r[MAX_BANDS_NUMBER_PLC], A[M + 1], synth[MAX_LEN + MDCT_MEM_LEN_MAX], energies[MAX_BANDS_NUMBER_PLC];
++    LC3_FLOAT r[MAX_BANDS_NUMBER_PLC], A[M + 1], *synth=h_DecSetup->workspace->plc_synth, energies[MAX_BANDS_NUMBER_PLC];
+     LC3_INT32 pitch_classifier;
+     LC3_FLOAT xcorr;
+     LC3_INT32 yLen;
+@@ -186,7 +186,7 @@
+             }
+ 
+             {
+-                LC3_FLOAT x_tda[MAX_LEN]; /* 960/2 */
++                LC3_FLOAT *x_tda=h_DecSetup->workspace->plc_tda; /* 960/2 */
+                 PlcAdvSetup->PlcPhEcuSetup.PhECU_norm_corr = xcorr;
+                 phEcu_env_stab_local[0] = (LC3_FLOAT)PHECU_ENV_STAB_LOCAL;
+                 phEcu_pfind_sens[0]     = (LC3_FLOAT)PHECU_PFIND_SENS;
+@@ -225,11 +225,11 @@
+                                  &(PlcAdvSetup->PlcPhEcuSetup.PhEcu_Ifft)
+                                  ,PlcAdvSetup->plc_fadeout_type,                   
+ 					             &(PlcAdvSetup->PlcPhEcuSetup.PhECU_nonpure_tone_flag)  /* nonpure tone flag */
+-                 );
++                 , h_DecSetup->workspace);
+ 
+ 
+                 ProcessingITDA_WIN_OLA_fl(x_tda, decoder->frame_length, decoder->imdct_win, decoder->imdct_winLen, decoder->imdct_laZeros,
+-                                          h_DecSetup->imdct_mem, synth);
++                                          h_DecSetup->imdct_mem, synth, h_DecSetup->workspace);
+                 move_float(syntM_fl_c, synth, decoder->frame_length);
+ 
+             
+@@ -252,7 +252,7 @@
+                                &h_DecSetup->alpha, synth
+                                , PlcAdvSetup->plc_fadeout_type
+                                , decoder->alpha_type_2_table
+-);
++, h_DecSetup->workspace);
+ 
+             processTdcTdac_fl(synth, decoder->imdct_win, decoder->frame_length, decoder->la_zeroes, h_DecSetup->imdct_mem);
+             memmove(syntM_fl_c, synth, sizeof(LC3_FLOAT) * decoder->frame_length);
+diff -ruN a/floating_point/plc_phecu_hq_ecu.c b/floating_point/plc_phecu_hq_ecu.c
+--- a/floating_point/plc_phecu_hq_ecu.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/plc_phecu_hq_ecu.c	2026-09-16 13:55:45.713217129 -0400
+@@ -24,15 +24,15 @@
+     Fft *PhEcu_Fft, Fft *PhEcu_Ifft    
+     , LC3_UINT8 plc_fadeout_type, LC3_INT16 *nonpure_tone_flag_ptr   /* nonpure tone flag */
+     
+-    )
++    , DecoderWorkspace *scratch)
+ {
+    LC3_INT32 i;
+    LC3_INT32 fs_idx, L, Lprot, n_grp, Lecu, LXsav, Lxfp_inuse;
+    LC3_FLOAT alpha[8];
+    LC3_FLOAT beta[8];
+    LC3_FLOAT mag_chg[8];
+-   LC3_FLOAT xfp_local_rnd[2*MAX_LEN];
+-   Complex   X_out_m[2*MAX_LEN];
++   LC3_FLOAT *xfp_local_rnd=scratch->hq_xfp;
++   Complex *X_out_m=scratch->hq_spectrum;
+    LC3_INT32 seed;
+    LC3_INT32 burst_len;
+ 
+@@ -80,7 +80,7 @@
+                                       , plc_fadeout_type                                               
+               );
+  
+-        plc_phEcu_spec_ana(xfp_local_rnd, Lprot, winWhr, pfind_sensPtr, plocs, n_plocs, f0est, X_sav_m, &LXsav, f0binPtr, f0ltpGainPtr, fs_idx, PhEcu_Fft);
++        plc_phEcu_spec_ana(xfp_local_rnd, Lprot, winWhr, pfind_sensPtr, plocs, n_plocs, f0est, X_sav_m, &LXsav, f0binPtr, f0ltpGainPtr, fs_idx, PhEcu_Fft, scratch);
+     }
+     else
+     {
+@@ -120,7 +120,7 @@
+            *time_offs,
+            x_tda /* output */, 
+            NULL, NULL, NULL,
+-           LA_ZEROS, PhECU_LA, PhEcu_Ifft);
++           LA_ZEROS, PhECU_LA, PhEcu_Ifft, scratch);
+  
+ }
+ 
+diff -ruN a/floating_point/plc_phecu_rec_frame.c b/floating_point/plc_phecu_rec_frame.c
+--- a/floating_point/plc_phecu_rec_frame.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/plc_phecu_rec_frame.c	2026-09-16 13:55:45.713336851 -0400
+@@ -25,14 +25,14 @@
+    LC3_INT32 LA_ZEROS,
+    LC3_INT32 LA,
+    Fft* PhEcu_ifft
+-)
++, DecoderWorkspace *scratch)
+ {
+ 
+    LC3_INT32 i;
+ 
+-   LC3_FLOAT xrec[2*MAX_LEN];
+-   LC3_FLOAT xsubst[2*MAX_LEN];
+-   LC3_FLOAT xsubst_LL[2*MAX_LEN];
++   LC3_FLOAT *xrec=scratch->rec_xrec;
++   LC3_FLOAT *xsubst=scratch->rec_subst;
++   LC3_FLOAT *xsubst_LL=scratch->rec_subst_ll;
+    LC3_FLOAT *pXsubst_LL;
+ 
+    LC3_INT32 fs_idx;
+diff -ruN a/floating_point/plc_phecu_spec_ana.c b/floating_point/plc_phecu_spec_ana.c
+--- a/floating_point/plc_phecu_spec_ana.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/plc_phecu_spec_ana.c	2026-09-16 13:55:45.713603677 -0400
+@@ -41,14 +41,15 @@
+    LC3_FLOAT * f0gainLtpPtr, 
+    LC3_INT32 bw_idx,
+    Fft* PhEcu_fft
+-) 
++, DecoderWorkspace *scratch)
+ {
+ 
+ 
+    LC3_INT32 i, peak_range_1, curr;
+-   LC3_FLOAT xfp_w[MAX_PLC_LPROT];
++   LC3_FLOAT *xfp_w=scratch->spec_windowed;
+  
+-   LC3_FLOAT Xabs[MAX_LEN] = {0};
++   LC3_FLOAT *Xabs=scratch->spec_abs;
++   memset(Xabs,0,sizeof(scratch->spec_abs));
+    LC3_FLOAT inp_high, inp_low, sens;
+    LC3_FLOAT interPos;
+    Complex   Xana_p[3];
+@@ -64,8 +65,8 @@
+     LC3_FLOAT PLC2_Q_flt;
+     LC3_FLOAT Q_scale_flt;
+ 
+-    LC3_INT16    Xabs_fx[MAX_LEN];
+-    LC3_INT16    plocs_fx[MAX_LEN];
++    LC3_INT16 *Xabs_fx=scratch->spec_abs_fx;
++    LC3_INT16 *plocs_fx=scratch->spec_locs_fx;
+ 
+     LC3_INT16    sens_fx;
+     LC3_INT16    inp_high_fx;
+diff -ruN a/floating_point/plc_tdc.c b/floating_point/plc_tdc.c
+--- a/floating_point/plc_tdc.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/plc_tdc.c	2026-09-16 13:55:45.712809800 -0400
+@@ -77,7 +77,7 @@
+                         LC3_FLOAT*       synth
+                         , LC3_UINT8       plc_fadeout_type
+                         ,LC3_FLOAT*      alpha_type_2_table
+-                        )
++                        , DecoderWorkspace *scratch)
+ {    
+           LC3_FLOAT step, step_n;
+           LC3_INT32   i, len, Tc, nbLostCmpt_loc, nextInc, beforeNextInc;
+@@ -89,7 +89,7 @@
+           LC3_FLOAT gainInov;
+           LC3_FLOAT hpBlendFac;
+           char *scratchSpace1st, *scratchSpaceTmp;
+-          char scratchSpace[(MAX_LEN_PCM_PLC  + MDCT_MEM_LEN_MAX + MAX_LEN_PCM_PLC + 1 + M) * sizeof(LC3_FLOAT)];
++          char *scratchSpace=(char *)scratch->tdc;
+           LC3_FLOAT alphaPrev;
+           LC3_FLOAT throttle;
+           LC3_INT32   frame_dms_idx, nbLostFramesInRow_mod;
+diff -ruN a/floating_point/plc_update.c b/floating_point/plc_update.c
+--- a/floating_point/plc_update.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/plc_update.c	2026-09-16 13:55:45.713120637 -0400
+@@ -10,9 +10,9 @@
+ #include "functions.h"
+ 
+ void processPlcUpdate_fl(PlcAdvSetup *PlcAdvSetup, LC3_INT32 frame_length, LC3_FLOAT *syntM, LC3_FLOAT *scf_q,
+-             LC3_INT32 *nbLostCmpt, LC3_FLOAT *cum_alpha, LC3_INT32 bfi, LC3_INT32 *prevBfi, LC3_INT32 *prevprevBfi)
++             LC3_INT32 *nbLostCmpt, LC3_FLOAT *cum_alpha, LC3_INT32 bfi, LC3_INT32 *prevBfi, LC3_INT32 *prevprevBfi, DecoderWorkspace *scratch)
+ {
+-    LC3_FLOAT tmp[MAX_LEN_PCM_PLC];
++    LC3_FLOAT *tmp=scratch->update;
+     
+     move_float(tmp, &PlcAdvSetup->pcmbufHist[frame_length], PlcAdvSetup->max_len_pcm_plc - frame_length);
+     move_float(&PlcAdvSetup->pcmbufHist[0], tmp, PlcAdvSetup->max_len_pcm_plc - frame_length);
+diff -ruN a/floating_point/pow2_exact.h b/floating_point/pow2_exact.h
+--- a/floating_point/pow2_exact.h	1969-12-31 19:00:00.000000000 -0500
++++ b/floating_point/pow2_exact.h	2026-09-16 16:29:41.969893697 -0400
+@@ -0,0 +1,59 @@
++/* Base-2 specialization of newlib4.3.0 ef_pow.c, restricted to |y|<=32.
++ * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
++ * Developed at SunPro, a Sun Microsystems, Inc. business.
++ * Permission to use, copy, modify, and distribute this software is freely
++ * granted, provided that this notice is preserved.
++ *
++ * Derived from Espressif newlib4.3.0, commit
++ * 1cc5829f04ef0bb1edc913e55ac7c47d58a46646, newlib/libm/math/ef_pow.c.
++ * Experimental: preserve the existing exponential polynomial/operation order.
++ * Use the project's normal powf for out-of-domain and nonfinite exponents.
++ */
++#ifndef ULL_POW2_EXACT_H
++#define ULL_POW2_EXACT_H
++
++#include <stdint.h>
++#include <math.h>
++static inline uint32_t ull_float_bits(float x){union{float f;uint32_t u;}v={.f=x};return v.u;}
++static inline float ull_float_from_bits(uint32_t u){union{float f;uint32_t u;}v={.u=u};return v.f;}
++#ifndef ULL_POW2_ATTR
++#define ULL_POW2_ATTR
++#endif
++static ULL_POW2_ATTR float ull_pow2_exact(float y)
++{
++    const float P1=1.6666667163e-01f, P2=-2.7777778450e-03f,
++        P3=6.6137559770e-05f, P4=-1.6533901999e-06f, P5=4.1381369442e-08f;
++    const float lg2=6.9314718246e-01f,lg2_h=6.93145752e-01f,lg2_l=1.42860654e-06f;
++    uint32_t iy=ull_float_bits(y)&0x7fffffffu;
++    if(iy>0x42000000u)return powf(2.0f,y);
++    if(iy==0)return 1.0f;
++    if(iy==0x3f800000u)return y<0?0.5f:2.0f;
++    if(ull_float_bits(y)==0x40000000u)return 4.0f;
++    if(ull_float_bits(y)==0x3f000000u)return 0x1.6a09e6p+0f;
++    /* For x=2, the general logarithm stage has exactly t1=1, t2=0.
++     * Keep the original y split and exponential reduction unchanged. */
++    float y1=ull_float_from_bits(ull_float_bits(y)&0xfffff000u);
++    float p_l=y-y1,p_h=y1,z=p_l+p_h,t,u,v,w,t1,r;
++    int32_t j=(int32_t)ull_float_bits(z),i=j&0x7fffffff,k=(i>>23)-0x7f,n=0;
++    if(i>0x3f000000){
++        n=j+(0x00800000>>(k+1));
++        k=((n&0x7fffffff)>>23)-0x7f;
++        t=ull_float_from_bits((uint32_t)n&~(0x007fffffu>>k));
++        n=((n&0x007fffff)|0x00800000)>>(23-k);
++        if(j<0)n=-n;
++        p_h-=t;
++    }
++    t=p_l+p_h;
++    t=ull_float_from_bits(ull_float_bits(t)&0xfffff000u);
++    u=t*lg2_h;
++    v=(p_l-(t-p_h))*lg2+t*lg2_l;
++    z=u+v;
++    w=v-(z-u);
++    t=z*z;
++    t1=z-t*(P1+t*(P2+t*(P3+t*(P4+t*P5))));
++    r=(z*t1)/(t1-2.0f)-(w+z*w);
++    z=1.0f-(r-z);
++    return ull_float_from_bits(ull_float_bits(z)+((uint32_t)n<<23));
++}
++
++#endif /* ULL_POW2_EXACT_H */
+diff -ruN a/floating_point/setup_dec_lc3plus.c b/floating_point/setup_dec_lc3plus.c
+--- a/floating_point/setup_dec_lc3plus.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/setup_dec_lc3plus.c	2026-09-16 13:55:45.583127650 -0400
+@@ -38,6 +38,7 @@
+ 
+     for (ch = 0; ch < channels; ch++) {
+         DecSetup* setup = balloc(decoder, &size, sizeof(DecSetup));
++        DecoderWorkspace *workspace = balloc(decoder, &size, sizeof(DecoderWorkspace));
+ 
+          size_t max_pitch = ceilf(228.0 * CODEC_FS(samplerate) / 12800.0);
+          size_t pcm_plc_len = max_pitch + frame_len;
+@@ -69,6 +70,7 @@
+ 
+         if (decoder) {
+             decoder->channel_setup[ch] = setup;
++            setup->workspace = workspace;
+ #ifdef CR9_C_ADD_1p25MS
+             setup->ltpf_mem_continuation = 0;
+ #  ifdef FIX_TX_RX_STRUCT_STEREO
+diff -ruN a/floating_point/setup_dec_lc3plus.h b/floating_point/setup_dec_lc3plus.h
+--- a/floating_point/setup_dec_lc3plus.h	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/setup_dec_lc3plus.h	2026-09-16 13:55:45.538010160 -0400
+@@ -13,8 +13,25 @@
+ #include "constants.h"
+ #include "lc3plus.h"
+ 
++/* Per-decoder working memory, allocated once by alloc_decoder. The embedded
++ * adapter places the entire arena in PSRAM; task stacks and hardware staging
++ * remain internal. Separate fields preserve nested PLC call lifetimes. */
++typedef struct {
++    LC3_FLOAT ltpf[12 * MAX_LEN];
++    LC3_FLOAT tdc[2 * MAX_LEN_PCM_PLC + MDCT_MEM_LEN_MAX + 1 + M];
++    LC3_FLOAT plc_synth[MAX_LEN + MDCT_MEM_LEN_MAX], plc_tda[MAX_LEN];
++    LC3_FLOAT imdct_tda[MAX_LEN], imdct_ov[2 * MAX_LEN];
++    LC3_FLOAT update[MAX_LEN_PCM_PLC];
++    LC3_FLOAT hq_xfp[2 * MAX_LEN];
++    Complex hq_spectrum[2 * MAX_LEN];
++    LC3_FLOAT rec_xrec[2 * MAX_LEN], rec_subst[2 * MAX_LEN], rec_subst_ll[2 * MAX_LEN];
++    LC3_FLOAT spec_windowed[MAX_PLC_LPROT], spec_abs[MAX_LEN];
++    LC3_INT16 spec_abs_fx[MAX_LEN], spec_locs_fx[MAX_LEN];
++} DecoderWorkspace;
++
+ /* Channel state and bitrate-derived values go in this struct */
+ typedef struct {
++    DecoderWorkspace *workspace;
+     LC3_INT* stDec_ola_mem_fx; /* MDCT_MEM_LEN_MAX */
+     LC3_INT  total_bits;
+     LC3_INT  enable_lpc_weighting;
+diff -ruN a/floating_point/setup_enc_lc3plus.c b/floating_point/setup_enc_lc3plus.c
+--- a/floating_point/setup_enc_lc3plus.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/setup_enc_lc3plus.c	2026-09-16 01:16:36.571598184 -0400
+@@ -789,7 +789,7 @@
+     return LC3PLUS_OK;
+ }
+ 
+-void update_enc_bandwidth(LC3PLUS_Enc* encoder, int bandwidth)
++void update_enc_bandwidth(LC3PLUS_Enc* encoder, LC3_INT bandwidth)
+ {
+     int index = 0;
+ 
+diff -ruN a/floating_point/sns_compute_scf.c b/floating_point/sns_compute_scf.c
+--- a/floating_point/sns_compute_scf.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/sns_compute_scf.c	2026-09-16 01:35:57.261496343 -0400
+@@ -24,14 +24,14 @@
+     stop    = 8.f;
+ 
+     score = ((2.f*(xl4[0]-xl4[1])) + (xl4[0]-xl4[2])) / 2.f;
+-    score = fmin(fmax(score, start), stop);
++    score = fminf(fmaxf(score, start), stop);
+ 
+     fac = (stop-score)/(stop-start);
+     return ((min_fac - max_fac) * fac + max_fac);
+ }
+ #endif
+ 
+-void processSnsComputeScf_fl(LC3_FLOAT* x, LC3_INT xLen, LC3_FLOAT* gains, LC3_INT smooth, LC3_FLOAT sns_damping, LC3_FLOAT attdec_damping_factor, LC3_INT fs_idx
++ULL_CODEC_HOT void processSnsComputeScf_fl(LC3_FLOAT* x, LC3_INT xLen, LC3_FLOAT* gains, LC3_INT smooth, LC3_FLOAT sns_damping, LC3_FLOAT attdec_damping_factor, LC3_INT fs_idx
+ #ifdef CR9_C_ADD_1p25MS
+                             , LC3PLUS_FrameDuration frame_dms, LC3_FLOAT *LT_normcorr, LC3_FLOAT normcorr
+ #endif
+@@ -75,7 +75,7 @@
+         else if (bands_number < 32)
+         {
+             ratio = LC3_FABS((LC3_FLOAT) (1.0 - 32.0 / (LC3_FLOAT) xLen));
+-            n4 = round(ratio * xLen);
++            n4 = roundf(ratio * xLen);
+             n2 = xLen - n4;
+             
+             j = 0;
+@@ -129,7 +129,7 @@
+         *LT_normcorr = normcorr * 0.125f + *LT_normcorr * 0.875f;
+ 
+         start = 0.8f;   /* adaptive preemphasis active from start to 1.0 */
+-        fac = (fmax(*LT_normcorr - start, 0) * (1. / (1.-start)));
++        fac = (fmaxf(*LT_normcorr - start, 0) * (1. / (1.-start)));
+ 
+         for (i = 0; i < 64; i++) {
+             x[i] = x[i] * (sns_preemph[i] + fac*sns_preemph_adapt[i]);
+diff -ruN a/floating_point/sns_interpolate_scf.c b/floating_point/sns_interpolate_scf.c
+--- a/floating_point/sns_interpolate_scf.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/sns_interpolate_scf.c	2026-09-16 16:29:20.638386039 -0400
+@@ -8,6 +8,7 @@
+ ******************************************************************************/
+ 
+ #include "functions.h"
++#include "pow2_exact.h"
+ 
+ void processSnsInterpolateScf_fl(LC3_FLOAT* gains, LC3_INT encoder_side, LC3_INT bands_number, LC3_FLOAT* gains_int)
+ {
+@@ -85,6 +86,6 @@
+     /* Linear domain */
+ 
+     for (n = 0; n < bands_number; n++) {
+-        gains_int[n] = LC3_POW(2, gains_int[n]);
++        gains_int[n] = ull_pow2_exact(gains_int[n]);
+     }
+ }
+diff -ruN a/floating_point/sns_quantize_scf.c b/floating_point/sns_quantize_scf.c
+--- a/floating_point/sns_quantize_scf.c	2026-09-24 13:46:12.736560404 -0400
++++ b/floating_point/sns_quantize_scf.c	2026-09-16 01:35:57.261341830 -0400
+@@ -352,7 +352,7 @@
+ 
+     for (i = 0; i < N; i++)
+     {
+-        y[3][i] = floor(xabs[i] * projfac);
++        y[3][i] = floorf(xabs[i] * projfac);
+ 
+         pulse_total += y[3][i];
+ 
+@@ -570,7 +570,7 @@
+     return ind;
+ }
+ 
+-void process_snsQuantizesScf_Enc(LC3_FLOAT* env, LC3_INT* index, LC3_FLOAT* envq, Dct2 dct2structSNS)
++ULL_CODEC_HOT void process_snsQuantizesScf_Enc(LC3_FLOAT* env, LC3_INT* index, LC3_FLOAT* envq, Dct2 dct2structSNS)
+ {
+     LC3_FLOAT stage2_en1_norm_sub[M];
+     LC3_INT i, j;
+diff -ruN a/floating_point/tns_coder.c b/floating_point/tns_coder.c
+--- a/floating_point/tns_coder.c	2026-09-24 13:46:12.737560425 -0400
++++ b/floating_point/tns_coder.c	2026-09-16 01:26:40.661157119 -0400
+@@ -170,10 +170,10 @@
+     }
+ 
+     if (numfilters == 1) {
+-        startfreq[0] = floor(600 * N * 2 / fs) + 1;
++        startfreq[0] = floorf(600 * N * 2 / fs) + 1;
+         stopfreq[0]  = N;
+     } else {
+-        startfreq[0] = floor(600 * N * 2 / fs) + 1;
++        startfreq[0] = floorf(600 * N * 2 / fs) + 1;
+         startfreq[1] = N / 2 + 1;
+         stopfreq[0]  = N / 2;
+         stopfreq[1]  = N;
+@@ -234,8 +234,8 @@
+         zero_float(r, MAXLAG+1);
+ 
+         for (sub = 1; sub <= nSubdivisions; sub++) {
+-            subdiv_startfreq = floor(subdiv_len * (sub - 1)) + startfreq[f] - 1;
+-            subdiv_stopfreq  = floor(subdiv_len * sub) + startfreq[f] - 1;
++            subdiv_startfreq = floorf(subdiv_len * (sub - 1)) + startfreq[f] - 1;
++            subdiv_stopfreq  = floorf(subdiv_len * sub) + startfreq[f] - 1;
+ #ifdef CR15_B_MISC_FIXES
+             if (fs == 32000 && frame_dms == LC3PLUS_FRAME_DURATION_7p5MS)
+ #else
+@@ -357,7 +357,7 @@
+                 tmp += huff_bits_tns[i][rc_idx_tmp[i]];
+             }
+ 
+-            bits = bits + ceil((LC3_FLOAT)tmp / 2048.0);
++            bits = bits + ceilf((LC3_FLOAT)tmp / 2048.0f);
+ 
+             j = 0;
+             for (i = f * 8; i <= f * 8 + order_out[f] - 1; i++) {

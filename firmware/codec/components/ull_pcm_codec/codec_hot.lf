@@ -1,0 +1,33 @@
+# Codec execution in IRAM; coefficient tables remain in flash.
+[mapping:ull_live_codec]
+archive: libull_pcm_codec.a
+entries:
+    * (noflash_text)
+    lc3plus_fft (noflash)
+    constants:MDCT_HRA_WINDOW_960_5ms (noflash_data)
+    constants:sns_LFCB (noflash_data)
+    constants:sns_HFCB (noflash_data)
+    constants:idct_lookup (noflash_data)
+    constants:pvq_enc_A (noflash_data)
+    constants:dct2_16 (noflash_data)
+    constants:sns_preemph_96 (noflash_data)
+    constants:sns_W (noflash_data)
+    constants:sns_vq_reg_adj_gains_fl (noflash_data)
+    constants:sns_vq_reg_lf_adj_gains_fl (noflash_data)
+    constants:sns_vq_near_adj_gains_fl (noflash_data)
+    constants:sns_vq_far_adj_gains_fl (noflash_data)
+    constants:ari_spec_lookup_fl (noflash_data)
+    constants:ari_spec_bits_fl (noflash_data)
+    constants:ari_spec_cumfreq_fl (noflash_data)
+    constants:ACC_COEFF_PER_BAND_96_5ms_HR (noflash_data)
+
+[mapping:ull_live_math]
+archive: libm.a
+entries:
+    libm_a-wf_log10 (noflash)
+    libm_a-ef_log10 (noflash)
+    libm_a-wf_log2 (noflash)
+    libm_a-wf_log (noflash)
+    libm_a-ef_log (noflash)
+    libm_a-wf_pow (noflash)
+    libm_a-ef_pow (noflash)
