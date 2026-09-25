@@ -23,6 +23,7 @@
 #include "pcm_stream.h"
 #include "mic_stream.h"
 #include "control_log.h"
+#include "status_probe.h"
 #include "radio_tx.h"
 bool ull_usb_bootloader_allowed(void){return !ull_trial_pump_busy();}
 static void usb_diagnostics(uint16_t page,uint32_t out[15]){
@@ -65,6 +66,8 @@ static void usb_diagnostics(uint16_t page,uint32_t out[15]){
     }else if(page==13){
         ull_raw_detached_parent_counters(out);
         ull_tone_trial_control_retry_status(out+9);
+    }else if(page==14){
+        ull_status_probe_snapshot(out);
     }
 }
 

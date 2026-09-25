@@ -7,9 +7,12 @@ On Linux, the running app appears as `cafe:4011`. The scripts use the system `li
 ```sh
 python3 tools/read_usb_retry_stats.py --seconds 30
 python3 tools/read_usb_parent_stats.py --seconds 30 > control-timing.jsonl
+python3 tools/read_usb_status_probe.py --seconds 30
 ```
 
 The first command prints counter snapshots and their 30-second deltas. The second prints time-stamped changes as newline-delimited JSON. It is useful while turning the wheel or pressing play/pause: `parent_accepted` tells you when an authenticated control message entered the receiver; `hid_queued` and `hid_sent` show whether Linux HID delivery followed it. If those rise together but the action was late, the delay came before the USB HID queue.
+
+The status probe reports counts and only the source, length, and command byte of the most recent unrecognized authenticated proprietary control. It intentionally omits packet contents and all known setup commands. It can reveal whether the headset sends a status message spontaneously, including during connection setup. An unrecognized command is **not** automatically a battery report; the receiver does not yet expose a battery percentage.
 
 A few counters need careful interpretation:
 

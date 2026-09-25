@@ -34,6 +34,9 @@ PAGE_NAMES = (
      'parent_acked', 'parent_rejected', 'parent_stale', 'parent_header',
      'parent_eligibility', 'control_repeat_allowed', 'control_repeat_held',
      'control_data_rx', 'control_quiet_ms'),
+    ('air_controls', 'acl_controls', 'known_controls', 'unknown_controls',
+     'setup_hidden', 'unframed_air', 'last_unknown_meta',
+     *(f'reserved_{i}' for i in range(7, 14)), 'schema_version'),
 )
 COUNTERS = (
     'frame', 'submitted', 'skipped', 'valid_rx', 'rejected_rx',

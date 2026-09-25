@@ -1,5 +1,6 @@
 #include "parent_ack.h"
 #include "control_log.h"
+#include "status_probe.h"
 #include "esp_attr.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -71,10 +72,16 @@ static void publish(unsigned origin,uint8_t header,const uint8_t *p,unsigned n){
     portEXIT_CRITICAL(&mux);
 }
 void ull_control_log_air(uint8_t header,const uint8_t *payload,unsigned length){
-    if(length && length<=60 && payload)publish(ORIGIN_AIR,header,payload,length);
+    if(length && length<=60 && payload){
+        ull_status_probe_air(header,payload,length);
+        publish(ORIGIN_AIR,header,payload,length);
+    }
 }
 void ull_control_log_acl(const uint8_t *payload,unsigned length){
-    if(length<=4092 && (!length || payload))publish(ORIGIN_ACL,0,payload,length);
+    if(length<=4092 && (!length || payload)){
+        ull_status_probe_acl(payload,length);
+        publish(ORIGIN_ACL,0,payload,length);
+    }
 }
 void ull_control_log_enable(bool value){
     portENTER_CRITICAL(&mux);

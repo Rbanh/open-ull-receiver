@@ -68,7 +68,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport,uint8_t stage,
                                 tusb_control_request_t const *request){
     if(!request)return false;
     if(request->bmRequestType==0xc0 && request->bRequest==0x5c &&
-       tu_le16toh(request->wValue)<=13 && tu_le16toh(request->wIndex)==0 &&
+       tu_le16toh(request->wValue)<=14 && tu_le16toh(request->wIndex)==0 &&
        tu_le16toh(request->wLength)==sizeof diagnostics){
         if(stage==CONTROL_STAGE_SETUP){
             ull_usb_diagnostics_cb_t callback=atomic_load_explicit(
