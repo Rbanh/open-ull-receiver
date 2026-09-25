@@ -6,6 +6,8 @@
 
 static atomic_uint air_seen,acl_seen,known_seen,unknown_seen;
 static atomic_uint setup_hidden,unframed_seen,last_unknown;
+static atomic_uint control_only_seen,control_only_proprietary;
+static atomic_uint control_only_setup_hidden,control_only_last_meta;
 
 static bool known_scalar(const uint8_t *p,unsigned n){
     return ull_parent_ack_wheel(p,n) || ull_parent_ack_media(p,n) ||
@@ -44,6 +46,24 @@ void ull_status_probe_air(uint8_t header,const uint8_t *payload,unsigned length)
 void ull_status_probe_acl(const uint8_t *payload,unsigned length){
     if(length && length<=4092u)observe(2,payload,length);
 }
+void ull_status_probe_control_only(uint8_t air_header,const uint8_t *plain,unsigned length){
+    /* This path runs only after hardware CRC and CCM authentication. The live
+     * audio parser still rejects zero-stream frames; do not change its result. */
+    if(!plain || ((air_header>>3u)&15u) || !(air_header&1u) || length<3u ||
+       (unsigned)plain[2]+3u!=length || !(plain[1]&3u) ||
+       (!plain[2] && (plain[1]&3u)!=1u))return;
+    atomic_fetch_add_explicit(&control_only_seen,1,memory_order_relaxed);
+    if((plain[1]&3u)!=2u || plain[2]<5u)return;
+    const uint8_t *p=plain+3;
+    unsigned n=(unsigned)p[0]|((unsigned)p[1]<<8u);
+    if(n!=(unsigned)plain[2]-4u || p[2]!=1u || p[3]!=1u)return;
+    if(p[4]==0x0e || p[4]==0x0f || (p[4]>=0xe0 && p[4]<=0xe4)){
+        atomic_fetch_add_explicit(&control_only_setup_hidden,1,memory_order_relaxed);
+        return;
+    }
+    atomic_fetch_add_explicit(&control_only_proprietary,1,memory_order_relaxed);
+    atomic_store_explicit(&control_only_last_meta,(n<<8u)|p[4],memory_order_relaxed);
+}
 void ull_status_probe_snapshot(uint32_t out[15]){
     if(!out)return;
     out[0]=atomic_load_explicit(&air_seen,memory_order_relaxed);
@@ -53,5 +73,9 @@ void ull_status_probe_snapshot(uint32_t out[15]){
     out[4]=atomic_load_explicit(&setup_hidden,memory_order_relaxed);
     out[5]=atomic_load_explicit(&unframed_seen,memory_order_relaxed);
     out[6]=atomic_load_explicit(&last_unknown,memory_order_relaxed);
-    out[14]=1; /* schema version; other words are zeroed by EP0 */
+    out[7]=atomic_load_explicit(&control_only_seen,memory_order_relaxed);
+    out[8]=atomic_load_explicit(&control_only_proprietary,memory_order_relaxed);
+    out[9]=atomic_load_explicit(&control_only_setup_hidden,memory_order_relaxed);
+    out[10]=atomic_load_explicit(&control_only_last_meta,memory_order_relaxed);
+    out[14]=2; /* schema version; other words are zeroed by EP0 */
 }

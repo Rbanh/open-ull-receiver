@@ -6,6 +6,7 @@
 #include "mbedtls/platform_util.h"
 #include <string.h>
 #include "mic_stream.h"
+#include "status_probe.h"
 
 int IRAM_ATTR ull_air_feedback_accept_frame(struct ull_air_feedback *state,
                              const struct ull_air_session_plan *plan,
@@ -37,7 +38,11 @@ int IRAM_ATTR ull_air_feedback_accept_frame(struct ull_air_feedback *state,
     size_t count=0;
     int result=air_uplink_parse_control(plain,length-4,header,
                                         sizes,2,records,4,&count,&control);
-    if(result || !count) {mbedtls_platform_zeroize(plain,sizeof(plain));return -4;}
+    if(result || !count) {
+        if((header&0x79u)==1u)
+            ull_status_probe_control_only(header,plain,length-4);
+        mbedtls_platform_zeroize(plain,sizeof(plain));return -4;
+    }
     struct ull_air_feedback updated=*state;
     bool changed=false;
     for(size_t i=0;i<count;i++) {

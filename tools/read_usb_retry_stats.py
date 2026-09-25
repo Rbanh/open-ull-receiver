@@ -36,7 +36,9 @@ PAGE_NAMES = (
      'control_data_rx', 'control_quiet_ms'),
     ('air_controls', 'acl_controls', 'known_controls', 'unknown_controls',
      'setup_hidden', 'unframed_air', 'last_unknown_meta',
-     *(f'reserved_{i}' for i in range(7, 14)), 'schema_version'),
+     'control_only_frames', 'control_only_proprietary',
+     'control_only_setup_hidden', 'control_only_last_meta',
+     *(f'reserved_{i}' for i in range(11, 14)), 'schema_version'),
 )
 COUNTERS = (
     'frame', 'submitted', 'skipped', 'valid_rx', 'rejected_rx',
