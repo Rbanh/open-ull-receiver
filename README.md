@@ -2,7 +2,7 @@
 
 ### Two tiny ESP32-S3 boards, one USB cable, and a headset that refused to become e-waste.
 
-This is an **unofficial, experimental replacement receiver** for the Razer BlackShark V2 HyperSpeed. On our tested headset, it now provides native USB stereo playback, mono microphone input, the mic-mute switch, volume-wheel keys, short-press play/pause, and automatic wireless reconnection. An unmodified Linux PC sees a standard USB audio and HID device. The same USB interfaces should be usable by other hosts, though our end-to-end testing has been on Linux.
+This is an **unofficial, experimental replacement receiver** for the Razer BlackShark V2 HyperSpeed. On our tested headset, it now provides native USB stereo playback, mono microphone input, the mic-mute switch, volume-wheel keys, short-press play/pause, and automatic wireless reconnection. An unmodified Linux PC sees a standard USB audio and HID device. Windows stereo playback has also been confirmed using Microsoft's built-in USB Audio 2.0 driver; the microphone endpoint appears, but Windows microphone recording and headset controls have not yet been verified. See [Windows compatibility and validation](docs/build.md#windows-compatibility-and-validation).
 
 The receiver is a stack of an **ESP32-S3 Supermini** and an **ESP32-S3-Zero with PSRAM**. The Supermini faces the PC and handles USB, radio, and controls; the Zero handles the codec work over SPI. Once flashed and wired, only the Supermini needs a USB cable.
 
@@ -14,7 +14,7 @@ At first, this looked like one of those maddening Linux audio problems. The orig
 
 We opened the receiver. The PCB looked fine under magnification, but squeezing near its main Airoha chip while plugging it in could bring it back to life. Sometimes it stayed up long enough to play real PC audio; sometimes a gentle nudge ended the session. That pointed to a physical connection fault hidden under the chip, not a Linux-only software bug. We kept the original alive just long enough to collect the owner-specific information needed for a replacement.
 
-The replacement began with a deceptively simple question: could an ESP32 speak the headset's **HyperSpeed** link? The headset also has regular Bluetooth, but that path was never the goal; Bluetooth hands-free audio would have missed the point. Early radio experiments produced green LEDs and convincing connection prompts, yet **a green LED was not audio**. The first unmistakable milestone was a four-note C–E–G–C cue heard through the headset from the S3. The first live USB audio sounded more like a distant, damaged radio than music. It took frame timing, codec work, RF hopping, USB clock feedback, and a lot of listening to turn that into recognizable, then mostly clean playback.
+The replacement began with a deceptively simple question: could an ESP32 speak the headset's **HyperSpeed** link? The headset also has regular Bluetooth, but that path was never the goal; Bluetooth hands-free audio would have missed the point. Early radio experiments produced green LEDs and convincing connection prompts, yet **a green LED was not audio**. The first unmistakable milestone was a four-note Câ€“Eâ€“Gâ€“C cue heard through the headset from the S3. The first live USB audio sounded more like a distant, damaged radio than music. It took frame timing, codec work, RF hopping, USB clock feedback, and a lot of listening to turn that into recognizable, then mostly clean playback.
 
 One S3 could do the job in bursts, but the reference LC3plus encoder and microphone decoder competed for a brutal 5 ms frame deadline. Rather than hope a single tiny board would somehow get faster, we split the work: the Zero handles encoding and decoding with PSRAM; the Supermini keeps the USB and radio schedule. That produced simultaneous stereo playback and a usable microphone. We then tied the boards' 5 V and ground rails so **one Supermini USB connection** powers the finished stack.
 
@@ -67,7 +67,7 @@ The host sees stereo 48 kHz/16-bit output, mono 48 kHz/16-bit input, and HID con
 
 For a running receiver, [read-only diagnostics](docs/diagnostics.md) can separate local deadline/queue problems from missing radio acknowledgements. The build is tied to tested ESP32-S3 variants and version-sensitive controller hooks. A different board or toolchain needs its own validation.
 
-## What is — and is not — published
+## What is â€” and is not â€” published
 
 - `firmware/radio`: the USB Audio Class 2/HID device, control link, radio transport, retries, and reconnection logic.
 - `firmware/codec`: the SPI-connected stereo encoder and mono decoder application.

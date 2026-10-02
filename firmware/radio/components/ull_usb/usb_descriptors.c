@@ -8,7 +8,7 @@ const tusb_desc_device_t ull_usb_device_descriptor = {
     .bLength=sizeof(tusb_desc_device_t), .bDescriptorType=TUSB_DESC_DEVICE,
     .bcdUSB=0x0200, .bDeviceClass=TUSB_CLASS_MISC, .bDeviceSubClass=MISC_SUBCLASS_COMMON,
     .bDeviceProtocol=MISC_PROTOCOL_IAD, .bMaxPacketSize0=64,
-    .idVendor=0xcafe, .idProduct=0x4011, .bcdDevice=0x0102,
+    .idVendor=0xcafe, .idProduct=0x4011, .bcdDevice=0x0103,
     .iManufacturer=1, .iProduct=2, .iSerialNumber=3, .bNumConfigurations=1
 };
 static const uint8_t hid_report[] = {
@@ -39,7 +39,7 @@ const uint8_t ull_usb_config_descriptor[] = {
     TUD_AUDIO_DESC_TYPE_I_FORMAT(2,16),
     TUD_AUDIO_DESC_STD_AS_ISO_EP(0x01,TUSB_XFER_ISOCHRONOUS|TUSB_ISO_EP_ATT_ASYNCHRONOUS,196,1),
     TUD_AUDIO_DESC_CS_AS_ISO_EP(AUDIO_CS_AS_ISO_DATA_EP_ATT_NON_MAX_PACKETS_OK,0,0,0),
-    TUD_AUDIO_DESC_STD_AS_ISO_FB_EP(0x84,3,1),
+    TUD_AUDIO_DESC_STD_AS_ISO_FB_EP(0x84,4,1),
     TUD_AUDIO_DESC_STD_AS_INT(ITF_CAPTURE,0,0,5),
     TUD_AUDIO_DESC_STD_AS_INT(ITF_CAPTURE,1,1,5),
     TUD_AUDIO_DESC_CS_AS_INT(UAC_CAPTURE_OUTPUT,0,AUDIO_FORMAT_TYPE_I,AUDIO_DATA_FORMAT_TYPE_I_PCM,1,0,0),

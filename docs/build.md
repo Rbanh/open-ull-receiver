@@ -19,3 +19,15 @@ pio run -d firmware/radio -t upload --upload-port /dev/serial/by-id/YOUR_SUPERMI
 ```
 
 Some boards need BOOT/RESET to enter the ROM downloader. The release does not contain private prebuilt binaries. If a build changes the controller or code layout, check the runtime and radio behavior before relying on it; the prototype uses version-sensitive ESP32-S3 controller hooks.
+
+## Windows compatibility and validation
+
+Windows 10 version 1703 and later, including Windows 11, ship Microsoft's [USB Audio 2.0 driver](https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/usb-2-0-audio-drivers). A compatible receiver should load `usbaudio2.sys` automatically. Select **Headphones (HyperSpeed Research S3)** for playback and **Microphone (HyperSpeed Research S3)** for input.
+
+The earlier firmware advertised a three-byte Full-Speed feedback endpoint and sent 10.14 feedback. Windows installed the correct audio driver but failed to start it with **Code 10**, logging `usbaudio2` event 37: it could not find a feedback endpoint for asynchronous playback. The receiver now advertises a four-byte explicit feedback endpoint and sends 16.16 feedback with TinyUSB's format correction disabled. TinyUSB 0.18.0 documents this combination as compatible with Linux and Windows. The USB device revision is `0x0103`.
+
+On October 2, 2026, the updated owner-paired prototype was built with ESP-IDF 5.5.0 and the pinned PlatformIO platform. The compiled feedback descriptor, pairing data, partition table, and selected memory/ROM addresses were checked before an application-only Supermini flash at `0x10000`; the flash hash verified. After a normal reset, Windows reported the audio and HID interfaces as **Started**, exposed headphone and microphone endpoints, and the owner confirmed hearing Windows audio through the headset.
+
+Windows microphone recording and headset control behavior remain unverified. Linux playback, microphone, and controls were tested before this feedback change; the four-byte update has not yet been retested on Linux. An automated Windows audio-stream check did not complete, so the playback result above is based on the owner's listening test.
+
+To enter the Supermini downloader, hold **BOOT**, press and release **RESET**, then release **BOOT**. If it remains in download mode after flashing, press **RESET** without holding **BOOT**, or reconnect its USB cable. Keep the codec board's USB unplugged while the boards share power. Make a private backup of the connected receiver before updating; owner-specific binaries and pairing information should remain outside the public checkout.

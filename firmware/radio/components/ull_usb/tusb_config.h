@@ -39,6 +39,6 @@
 // Exactly 48 samples per 1 ms synchronous capture interval; no adaptive FIFO sizing.
 #define CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0
 
-// Standard Full-Speed feedback:3-byte10.14; manual API accepts16.16.
+// Four-byte 16.16 feedback supported by Windows and Linux.
 #define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP 1
-#define CFG_TUD_AUDIO_ENABLE_FEEDBACK_FORMAT_CORRECTION 1
+#define CFG_TUD_AUDIO_ENABLE_FEEDBACK_FORMAT_CORRECTION 0

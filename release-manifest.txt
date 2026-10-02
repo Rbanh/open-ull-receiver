@@ -81,6 +81,8 @@ firmware/radio/src/raw_llcp.c
 firmware/radio/src/raw_llcp.h
 firmware/radio/src/reconnect_barrier.h
 firmware/radio/src/spi_protocol.h
+firmware/radio/src/status_probe.c
+firmware/radio/src/status_probe.h
 firmware/radio/src/tone_frames.inc
 firmware/radio/src/tone_packet.c
 firmware/radio/src/tone_packet.h
@@ -94,9 +96,11 @@ patches/lc3plus-v1.7.1.patch
 release-manifest.txt
 tests/parent_ack_test.c
 tests/run.sh
+tests/status_probe_test.c
 tools/audit_release.py
 tools/dump_original.py
 tools/provision_from_dump.py
 tools/read_usb_parent_stats.py
 tools/read_usb_retry_stats.py
+tools/read_usb_status_probe.py
 tools/setup_dependencies.py
