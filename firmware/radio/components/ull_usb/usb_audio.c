@@ -79,6 +79,17 @@ void ull_usb_audio_stats(ull_usb_audio_stats_t *out){
     out->playback_buffered_frames=playback.count;out->capture_buffered_frames=capture.count;
     portEXIT_CRITICAL(&audio_lock);
 }
+void ull_usb_audio_diagnostics(uint32_t out[15]){
+    portENTER_CRITICAL(&audio_lock);
+    out[0]=stats.mounted;out[1]=stats.playback_active;out[2]=stats.capture_active;
+    out[3]=stats.playback_packets;out[4]=stats.playback_frames;
+    out[5]=playback.count;out[6]=stats.radio_playback_frames;
+    out[7]=stats.playback_dropped_frames;out[8]=stats.malformed_playback_packets;
+    out[9]=playback_feedback.value_q16;out[10]=playback_feedback.active;
+    out[11]=stats.capture_underflow_frames;out[12]=stats.capture_dropped_frames;
+    out[13]=(uint32_t)(esp_timer_get_time()/1000);out[14]=1;
+    portEXIT_CRITICAL(&audio_lock);
+}
 void ull_usb_audio_print_stats(void){
     portENTER_CRITICAL(&audio_lock);
     uint32_t feedback_value=playback_feedback.value_q16;bool feedback_active=playback_feedback.active;

@@ -12,6 +12,8 @@ typedef struct {
 } ull_usb_audio_stats_t;
 esp_err_t ull_usb_audio_init(void);
 void ull_usb_audio_stats(ull_usb_audio_stats_t *out);
+/* Payload-free USB queue/feedback snapshot, schema version 1. */
+void ull_usb_audio_diagnostics(uint32_t out[15]);
 void ull_usb_audio_print_stats(void);
 void ull_usb_audio_print_level(void);
 // Task-context API only: USB 48kHz signed16 LE PCM, playback interleaved L/R, capture mono.

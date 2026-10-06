@@ -10,3 +10,5 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-p
 cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
   "$root/tests/status_probe_test.c" "$root/firmware/radio/src/status_probe.c" -o "$work/status_probe_test"
 "$work/status_probe_test"
+
+python3 "$root/tests/watch_receiver_test.py"

@@ -2,6 +2,54 @@
 
 The Supermini exposes payload-free, read-only development counters over USB EP0. They report frame timing, SPI/USB queue health, retransmission outcomes, and parent-control activity. They do **not** return audio, packets, identity material, or pairing credentials.
 
+## Continuous Windows capture
+
+Firmware USB revision `0104` also exposes these counters through a separate
+vendor HID collection. Windows uses its built-in HID and USB audio drivers;
+diagnostic reads can run alongside playback without installing libusb or WinUSB.
+The media-control collection retains consumer report ID 1.
+
+```powershell
+python tools/watch_receiver.py --probe
+python tools/watch_receiver.py --output receiver-watch
+```
+
+The watcher samples radio, codec, and USB pages once a second, with per-channel
+histograms every 30 seconds. Page RF15 adds USB stream state, PCM input/consumption
+totals, queue depth, feedback in 16.16 format, malformed-packet counts, device
+uptime, and schema version 1. HID feature report ID is `0x10 + page`; each report
+is one ID byte plus the existing 64-byte RF page. Feature reports contain no
+commands and their SET_REPORT callback has no effect.
+
+Logs reconnect automatically after unplugging. They rotate at 16 MiB and retain
+up to seven days or 512 MiB by default. A per-directory mutex prevents duplicate
+collectors. Reboots and counter resets start a fresh baseline; uint32 counter
+wraps do not become spurious loss spikes. Stream inactivity is excluded from
+playback fault alerts. Sample pages are sequential snapshots, so individual
+1-second counts can differ slightly at page boundaries.
+Compact per-minute totals and queue ranges are also retained for 30 days in
+`minute-*.jsonl`, so long-term trends survive detailed-log rotation.
+
+```powershell
+python tools/watch_receiver.py --output receiver-watch --mark "Sound degraded"
+python tools/watch_receiver.py --output receiver-watch --mark "Sound clear again"
+python tools/watch_receiver.py --output receiver-watch --summarize --hours 1
+python tools/watch_receiver.py --output receiver-watch --stop
+```
+
+Use markers to compare clear and degraded intervals. `no_stereo_ack` means no
+authenticated reply confirmed stereo reception in that observation window;
+it does not by itself prove audible loss. Queue starvation, SPI errors, skipped
+radio slots, feedback drift, and channel reply ratios help narrow the cause.
+The watcher does not change radio settings or firmware automatically.
+
+For login autostart, create a shortcut to `pythonw.exe` with the absolute watcher
+script path and `--output` directory as arguments in your Windows Startup folder.
+The local collector can run independently of Codex; scheduled analysis of local
+files requires the computer awake and Codex running.
+
+## Linux EP0 capture
+
 On Linux, the running app appears as `cafe:4011`. The scripts use the system `libusb-1.0` library and need permission to open the corresponding `/dev/bus/usb` node. A temporary ACL or a root-run invocation is enough; no persistent udev rule is required just to inspect a session.
 
 ```sh

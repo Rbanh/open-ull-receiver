@@ -8,11 +8,21 @@ const tusb_desc_device_t ull_usb_device_descriptor = {
     .bLength=sizeof(tusb_desc_device_t), .bDescriptorType=TUSB_DESC_DEVICE,
     .bcdUSB=0x0200, .bDeviceClass=TUSB_CLASS_MISC, .bDeviceSubClass=MISC_SUBCLASS_COMMON,
     .bDeviceProtocol=MISC_PROTOCOL_IAD, .bMaxPacketSize0=64,
-    .idVendor=0xcafe, .idProduct=0x4011, .bcdDevice=0x0103,
+    .idVendor=0xcafe, .idProduct=0x4011, .bcdDevice=0x0104,
     .iManufacturer=1, .iProduct=2, .iSerialNumber=3, .bNumConfigurations=1
 };
 static const uint8_t hid_report[] = {
-    TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(1))
+    TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(1)),
+    // Separate vendor collection: read-only counter pages, via inbox HID drivers.
+    0x06,0x00,0xff, 0x09,0x01, 0xa1,0x01,
+    0x15,0x00, 0x26,0xff,0x00, 0x75,0x08, 0x95,0x40,
+#define DIAG_FEATURE(page) 0x85,(0x10+(page)),0x09,((page)+1),0xb1,0x02
+    DIAG_FEATURE(0), DIAG_FEATURE(1), DIAG_FEATURE(2), DIAG_FEATURE(3),
+    DIAG_FEATURE(4), DIAG_FEATURE(5), DIAG_FEATURE(6), DIAG_FEATURE(7),
+    DIAG_FEATURE(8), DIAG_FEATURE(9), DIAG_FEATURE(10), DIAG_FEATURE(11),
+    DIAG_FEATURE(12), DIAG_FEATURE(13), DIAG_FEATURE(14), DIAG_FEATURE(15),
+#undef DIAG_FEATURE
+    0xc0
 };
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance){
     (void)instance;return hid_report;

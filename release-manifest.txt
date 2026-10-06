@@ -97,6 +97,7 @@ release-manifest.txt
 tests/parent_ack_test.c
 tests/run.sh
 tests/status_probe_test.c
+tests/watch_receiver_test.py
 tools/audit_release.py
 tools/dump_original.py
 tools/provision_from_dump.py
@@ -104,3 +105,4 @@ tools/read_usb_parent_stats.py
 tools/read_usb_retry_stats.py
 tools/read_usb_status_probe.py
 tools/setup_dependencies.py
+tools/watch_receiver.py

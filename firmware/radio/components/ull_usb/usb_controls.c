@@ -39,10 +39,15 @@ void ull_usb_controls_service(void){
         release_pending=true;release_due=now+12000;
     }
 }
+static bool read_diagnostics(uint16_t page,uint32_t out[16]);
 uint16_t tud_hid_get_report_cb(uint8_t instance,uint8_t report_id,
                               hid_report_type_t report_type,uint8_t *buffer,uint16_t reqlen){
-    (void)instance;(void)report_id;(void)report_type;(void)buffer;(void)reqlen;
-    return 0;
+    if(instance!=0 || report_type!=HID_REPORT_TYPE_FEATURE || !buffer ||
+       reqlen<64 || report_id<0x10 || report_id>0x1f)return 0;
+    uint32_t snapshot[16];
+    if(!read_diagnostics((uint16_t)(report_id-0x10),snapshot))return 0;
+    memcpy(buffer,snapshot,sizeof snapshot);
+    return sizeof snapshot;
 }
 void tud_hid_set_report_cb(uint8_t instance,uint8_t report_id,
                            hid_report_type_t report_type,uint8_t const *buffer,uint16_t bufsize){
@@ -59,6 +64,17 @@ static _Atomic(ull_usb_diagnostics_cb_t) diagnostics_cb;
 void ull_usb_controls_set_diagnostics(ull_usb_diagnostics_cb_t callback){
     atomic_store_explicit(&diagnostics_cb,callback,memory_order_release);
 }
+static bool read_diagnostics(uint16_t page,uint32_t out[16]){
+    ull_usb_diagnostics_cb_t callback=atomic_load_explicit(
+        &diagnostics_cb,memory_order_acquire);
+    if(page!=15 && (page>14 || !callback))return false;
+    memset(out,0,64);
+    uint8_t *tag=(uint8_t *)out;
+    tag[0]='R';tag[1]='F';tag[2]=(uint8_t)('0'+page/10u);tag[3]=(uint8_t)('0'+page%10u);
+    if(page==15)ull_usb_audio_diagnostics(out+1);
+    else callback(page,out+1);
+    return true;
+}
 static void boot_after_ack(void *unused){
     (void)unused;
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -68,17 +84,11 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport,uint8_t stage,
                                 tusb_control_request_t const *request){
     if(!request)return false;
     if(request->bmRequestType==0xc0 && request->bRequest==0x5c &&
-       tu_le16toh(request->wValue)<=14 && tu_le16toh(request->wIndex)==0 &&
+       tu_le16toh(request->wValue)<=15 && tu_le16toh(request->wIndex)==0 &&
        tu_le16toh(request->wLength)==sizeof diagnostics){
         if(stage==CONTROL_STAGE_SETUP){
-            ull_usb_diagnostics_cb_t callback=atomic_load_explicit(
-                &diagnostics_cb,memory_order_acquire);
-            if(!callback)return false;
             uint16_t page=tu_le16toh(request->wValue);
-            memset(diagnostics,0,sizeof diagnostics);
-            uint8_t *tag=(uint8_t *)diagnostics;
-            tag[0]='R';tag[1]='F';tag[2]=(uint8_t)('0'+page/10u);tag[3]=(uint8_t)('0'+page%10u);
-            callback(page,diagnostics+1);
+            if(!read_diagnostics(page,diagnostics))return false;
             return tud_control_xfer(rhport,request,diagnostics,sizeof diagnostics);
         }
         return true;
