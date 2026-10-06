@@ -50,15 +50,19 @@ def compare(before, after, seconds):
     keys = set(COUNTERS + EXTRA_COUNTERS)
     keys.update(k for k in after if k.startswith(('ch_', 'retry_failure_', 'retry_cache_')))
     common = keys & before.keys() & after.keys()
-    # A disconnect/reboot starts a fresh baseline; legitimate uint32 wraps survive.
-    reset = any(after[k] < before[k] and before[k] < 0xf0000000 for k in common)
+    # Headset reconnects reset radio session counters without rebooting USB.
+    # Keep lifetime-counter changes when uptime proves the Supermini continued.
+    # Otherwise start a fresh baseline; legitimate uint32 wraps survive.
+    reset_keys = {k for k in common if after[k] < before[k] and before[k] < 0xf0000000}
+    continuous_uptime = ('uptime_ms' in before and 'uptime_ms' in after
+                         and after['uptime_ms'] > before['uptime_ms'])
     if 'uptime_ms' in before and after['uptime_ms'] < before['uptime_ms'] < 0xf0000000:
-        reset = True
-    if reset:
         return {}, {}, ['receiver_counter_reset']
-    delta = {k: (after[k] - before[k]) & 0xffffffff for k in sorted(common)}
+    if reset_keys and not continuous_uptime:
+        return {}, {}, ['receiver_counter_reset']
+    delta = {k: (after[k] - before[k]) & 0xffffffff for k in sorted(common - reset_keys)}
     metrics = {}
-    anomalies = []
+    anomalies = ['partial_counter_reset'] if reset_keys else []
     active = bool(after.get('usb_mounted') and after.get('usb_playback_active'))
     if seconds > 0:
         metrics['usb_frames_per_second'] = round(delta.get('usb_playback_frames', 0) / seconds, 1)
@@ -358,7 +362,7 @@ def run(args):
                     anomalies.append('host_sampling_gap')
                 if read_span > 0.1:
                     anomalies.append('diagnostic_read_slow')
-                if 'receiver_counter_reset' in anomalies:
+                if 'receiver_counter_reset' in anomalies or 'partial_counter_reset' in anomalies:
                     session = uuid.uuid4().hex
                 row = {'type': 'sample', 'time': utc_now(), 'session': session,
                        'read_ms': round(read_span * 1000, 2), 'counters': counters,

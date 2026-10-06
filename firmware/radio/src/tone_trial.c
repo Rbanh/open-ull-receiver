@@ -921,9 +921,10 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
                     (void)ull_raw_receive_air_control(&control,&sent->parent);
                 }
                 uint32_t coarse=(rx->hs-trial.requested_hs)&MASK;
-                int64_t elapsed=(int64_t)coarse*625+rx->hus-trial.requested_hus;
-                if(audio_sent && auto_last_submitted_repeat && elapsed>=0 && elapsed<6000){
-                    if(elapsed<ULL_AIR_SUBINTERVAL_US)first_window_valid=true;
+                /* Controller timestamps and the 3-ms cutoff use half-us. */
+                int64_t elapsed_hus=(int64_t)coarse*625+rx->hus-trial.requested_hus;
+                if(audio_sent && auto_last_submitted_repeat && elapsed_hus>=0 && elapsed_hus<6000){
+                    if(elapsed_hus<ULL_AIR_SUBINTERVAL_US*2u)first_window_valid=true;
                     else second_window_valid=true;
                 }
                 /* Slot1 replies precede the observed slot2 expiry advance.
@@ -931,7 +932,7 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
                  * when deriving the next interval's expected sequence. */
                 if(ULL_RX_DIAGNOSTIC>=3 &&
                    !sent->receive && sent->index==trial.active_frame &&
-                   elapsed>=0 && elapsed<6000){
+                   elapsed_hus>=0 && elapsed_hus<6000){
                     ull_air_feedback_note_tx(&trial.feedback,trial.active_frame,
                                              sent->stream_mask,sent->tx_sequence);
                     if(audio_sent)for(unsigned ch=0;ch<2;ch++){
@@ -941,7 +942,7 @@ uint8_t IRAM_ATTR ull_tone_trial_step(void){
                             acknowledged|=1u<<ch;
                     }
                     if(audio_sent && auto_last_submitted_repeat &&
-                       elapsed<ULL_AIR_SUBINTERVAL_US)first_window_ack=acknowledged;
+                       elapsed_hus<ULL_AIR_SUBINTERVAL_US*2u)first_window_ack=acknowledged;
                 }
             }else {trial.received_rejected++;atomic_fetch_add(&live_delivery[6],1);}
             mbedtls_platform_zeroize(&control,sizeof(control));

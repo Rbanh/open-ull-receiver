@@ -23,8 +23,10 @@ commands and their SET_REPORT callback has no effect.
 
 Logs reconnect automatically after unplugging. They rotate at 16 MiB and retain
 up to seven days or 512 MiB by default. A per-directory mutex prevents duplicate
-collectors. Reboots and counter resets start a fresh baseline; uint32 counter
-wraps do not become spurious loss spikes. Stream inactivity is excluded from
+collectors. Reboots start a fresh baseline. If headset reconnection resets only
+some counters while device uptime advances, the watcher retains changes in the
+other counters and records `partial_counter_reset`. Uint32 counter wraps do not
+become spurious loss spikes. Stream inactivity is excluded from
 playback fault alerts. Sample pages are sequential snapshots, so individual
 1-second counts can differ slightly at page boundaries.
 Compact per-minute totals and queue ranges are also retained for 30 days in
@@ -67,6 +69,7 @@ A few counters need careful interpretation:
 - `submitted`, `audio_completed`, and `skipped` show whether the local 5 ms radio schedule kept up.
 - `source_underflows`, `spi_timeouts`, `spi_crc_errors`, `playback_queue_drops`, `usb_playback_dropped_frames`, and `mic_dropped` indicate local pipeline trouble. Compare their **deltas**, since most are cumulative since boot.
 - `retry_attempted` and `retry_completed` count second-transmission reservations. `no_stereo_ack` means neither authenticated reply confirmed stereo in its measured windows; it does **not** prove that the headset missed the audio.
+- Reply-window diagnostics use the controller's half-microsecond clock. The first/second boundary is 1,420 microseconds (2,840 clock units). Builds before the October 6, 2026 unit correction misclassified first-window replies as second-window replies; their overall stereo-confirmation totals remain comparable. This measurement correction does not change radio scheduling or playback.
 - `control_repeat_allowed` and `control_repeat_held` count control-bearing audio frames admitted to or withheld from retransmission. In quiet playback, one in four 30 ms control polls is intentionally held to single-send, providing a control opportunity every 120 ms. A real control reply starts a five-second period of single-send control polls. Ordinary audio retransmissions continue.
 - `parent_duplicates`, `parent_rejected`, and `parent_stale` identify distinct control-link failure modes. Their absolute values matter less than whether they rise during a problem.
 

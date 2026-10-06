@@ -40,6 +40,28 @@ class DiagnosticsTest(unittest.TestCase):
         delta, _, _ = compare(before, after, 1)
         self.assertEqual(delta['usb_playback_packets'], 1000)
 
+    def test_headset_reconnect_retains_usb_losses_without_reboot(self):
+        before = self.state(frame=500000, usb_dropped_frames=0)
+        after = self.state(frame=0, uptime_ms=2000, usb_dropped_frames=40000,
+                           usb_playback_packets=2000, usb_playback_frames=96000)
+        delta, metrics, anomalies = compare(before, after, 1)
+        self.assertNotIn('frame', delta)
+        self.assertEqual(delta['usb_dropped_frames'], 40000)
+        self.assertEqual(delta['usb_playback_frames'], 48000)
+        self.assertEqual(metrics['usb_frames_per_second'], 48000)
+        self.assertIn('partial_counter_reset', anomalies)
+        self.assertIn('usb_dropped_frames', anomalies)
+        self.assertNotIn('receiver_counter_reset', anomalies)
+
+    def test_reset_without_uptime_evidence_is_conservative(self):
+        before = self.state(frame=500000)
+        after = self.state(frame=0, usb_dropped_frames=40000)
+        before.pop('uptime_ms')
+        after.pop('uptime_ms')
+        delta, _, anomalies = compare(before, after, 1)
+        self.assertEqual(delta, {})
+        self.assertEqual(anomalies, ['receiver_counter_reset'])
+
     def test_idle_does_not_produce_playback_faults(self):
         after = self.state(usb_playback_active=0, usb_buffered_frames=0, source_underflows=100)
         _, _, anomalies = compare(self.state(), after, 1)
